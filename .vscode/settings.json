@@ -1,0 +1,3 @@
+{
+    "ruff.args": ["--line-length", "300"]
+}
