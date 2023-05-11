@@ -4,18 +4,18 @@ env:
   # which environment to learn in
   #   either carla-v0 or carla_mpc-v0
   name: carla_mpc-v0
-  host: "192.168.240.4"
-  dt: 0.025
+  host: "192.168.240.5"
+  dt: 0.05
   # Change this to match your server user
   port: 2000
   render: false
   ego_vehicle_filter: "vehicle.lincoln*"
   desired_speed: 12
-  num_veh: 2
-  num_ped: 0
+  num_veh: 3
+  num_ped: 2
   max_steps: 500
   CAM_RES: 1024
-  max_waypt: 12
+  max_waypt: 200
   reward_weights:
     # Route completion reward
     c_completion: 100.0
