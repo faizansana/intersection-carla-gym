@@ -19,6 +19,9 @@ from gymnasium import spaces
 import util.carla_logger as carla_logger
 from util.misc import vec_decompose, delta_angle_between
 from util.route_planner import RoutePlanner
+from local_carla_agents.navigation.local_planner import LocalPlanner
+from local_carla_agents.navigation.global_route_planner_dao import GlobalRoutePlannerDAO
+from local_carla_agents.navigation.global_route_planner import GlobalRoutePlanner
 
 
 class CarlaEnv(gym.Env):
@@ -76,6 +79,16 @@ class CarlaEnv(gym.Env):
         self.peds = []
 
         self.og_camera_img = None
+
+        # Make global plan based on start and end points
+        global_planner_dao = GlobalRoutePlannerDAO(self.map, sampling_resolution=0.1)
+        global_planner = GlobalRoutePlanner(global_planner_dao)
+        global_planner.setup()
+        # Start and Destination
+        self.start = carla.Transform(carla.Location(x=84, y=-120, z=10), carla.Rotation(yaw=270))
+        self.dest = carla.Transform(carla.Location(x=49, y=-137), carla.Rotation())
+        self.waypoints = global_planner.trace_route(self.start.location, self.dest.location)
+
 
     def _populate_state_info(self):
         ego_x, ego_y = self._get_ego_pos()
@@ -332,10 +345,10 @@ class CarlaEnv(gym.Env):
         min_wp = self.waypoints[0]
         index = 0
         for i, wp in enumerate(self.waypoints):
-            if location.distance(wp.transform.location) < location.distance(min_wp.transform.location):
+            if location.distance(wp[0].transform.location) < location.distance(min_wp[0].transform.location):
                 min_wp = wp
                 index = i
-        return min_wp, float(index) / len(self.waypoints)
+        return min_wp[0], float(index) / len(self.waypoints)
 
     def _get_future_wpt_angle(self, distances):
         """
@@ -420,11 +433,6 @@ class CarlaEnv(gym.Env):
 
         self._set_synchronous_mode(False)
 
-        # Spawn the ego vehicle at a random position between start and dest
-        # Start and Destination
-        self.start = carla.Transform(carla.Location(x=84, y=-120, z=10), carla.Rotation(yaw=270))
-        self.dest = carla.Transform(carla.Location(x=49, y=-137), carla.Rotation())
-
         self.target_vehicles = []
         self.peds = []
         assert(self.num_veh <= 3)
@@ -441,8 +449,10 @@ class CarlaEnv(gym.Env):
         if self._try_spawn_ego_vehicle_at(self.start) is False:
             raise Exception("Error: Cannot spawn ego vehicle")
 
-        self.routeplanner = RoutePlanner(self.ego, self.max_waypt)
-        self.waypoints, _, _ = self.routeplanner.run_step()
+        # self.routeplanner = RoutePlanner(self.ego, self.max_waypt)
+        self.routeplanner = LocalPlanner(self.ego)
+        self.routeplanner.set_global_plan(self.waypoints)
+        # self.waypoints, _, _ = self.routeplanner.run_step()
         
         # Add collision sensor
         self.ego_collision_sensor = self.world.spawn_actor(self.collision_bp, carla.Transform(), attach_to=self.ego)
@@ -554,27 +564,11 @@ class CarlaEnv(gym.Env):
     
     def step(self, action):
         current_action = np.array(action) + self.last_action
-        current_action = np.clip(
-            current_action, -1.0, 1.0, dtype=np.float32)
-        throttle_or_brake, steer = current_action
-        # throttle_or_brake = 0
-        if throttle_or_brake >= 0:
-            throttle = throttle_or_brake
-            brake = 0
-        else:
-            throttle = 0
-            brake = -throttle_or_brake
+        self.routeplanner.set_speed(current_action[0])
+        control = self.routeplanner.run_step(debug=True)
+        self.ego.apply_control(control)
 
-        # Apply control
-        act = carla.VehicleControl(
-            throttle=float(throttle),
-            steer=float(steer),
-            brake=float(brake),
-            gear=1,
-            manual_gear_shift=True
-            )
-        self.ego.apply_control(act)
-
+        current_action = np.clip(current_action, -1.0, 1.0, dtype=np.float32)
         self.world.tick()
 
         self._populate_state_info()
@@ -630,7 +624,7 @@ if __name__ == "__main__":
     
     try:
         while True:
-            obs, reward, done, info = env.step([0.5, 0.0])
+            obs, reward, done, info = env.step([30, 0.0])
             if done:
                 obs, info = env.reset()
             
