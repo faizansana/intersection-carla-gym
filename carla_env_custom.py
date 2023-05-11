@@ -52,7 +52,7 @@ class CarlaEnv(gym.Env):
 
         # Add Top down Camera sensor
         self.camera_img = np.zeros((self.CAM_RES, self.CAM_RES, 3), dtype=np.uint8)
-        self.camera_trans = carla.Transform(carla.Location(x=0.8, z=60), carla.Rotation(pitch=-90))
+        self.camera_trans = carla.Transform(carla.Location(x=0.8, z=25), carla.Rotation(pitch=-90))
         self.camera_bp = self.world.get_blueprint_library().find("sensor.camera.rgb")
         # Modify the attributes of the blueprint to set image resolution and field of view.
         self.camera_bp.set_attribute("image_size_x", str(self.CAM_RES))
@@ -85,7 +85,7 @@ class CarlaEnv(gym.Env):
         global_planner = GlobalRoutePlanner(global_planner_dao)
         global_planner.setup()
         # Start and Destination
-        self.start = carla.Transform(carla.Location(x=84, y=-120, z=10), carla.Rotation(yaw=270))
+        self.start = carla.Transform(carla.Location(x=84, y=-90, z=10), carla.Rotation(yaw=270))
         self.dest = carla.Transform(carla.Location(x=49, y=-137), carla.Rotation())
         self.waypoints = global_planner.trace_route(self.start.location, self.dest.location)
 
@@ -440,11 +440,17 @@ class CarlaEnv(gym.Env):
         self._spawn_surrounding_close_proximity_vehicles()
         # Spawn pedestrians
         if self.num_ped > 0:
-            pedestrian = self._try_spawn_random_walker_at(carla.Transform(carla.Location(x=92.7, y=-144, z=10), carla.Rotation(yaw=180)))
-            self.peds.append(pedestrian)
+            x = 92.7
+            for _ in range(self.num_ped):
+                pedestrian = self._try_spawn_random_walker_at(carla.Transform(carla.Location(x=x, y=-144, z=10), carla.Rotation(yaw=180)))
+                x += 1
+                self.peds.append(pedestrian)
         if self.num_ped > 1:
-            self._try_spawn_random_walker_at(carla.Transform(carla.Location(x=74.6, y=-144, z=10), carla.Rotation(yaw=90)))
-            self.peds.append(pedestrian)
+            x = 74.6
+            for _ in range(self.num_ped):
+                self._try_spawn_random_walker_at(carla.Transform(carla.Location(x=x, y=-144, z=10), carla.Rotation(yaw=90)))
+                x += 1
+                self.peds.append(pedestrian)
 
         if self._try_spawn_ego_vehicle_at(self.start) is False:
             raise Exception("Error: Cannot spawn ego vehicle")
