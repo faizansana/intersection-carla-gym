@@ -8,7 +8,7 @@ import time
 import sys
 from typing import Dict
 
-sys.path.append("/home/docker/src/carla-0.9.6-py3.5-linux-x86_64.egg")
+sys.path.append("/home/docker/repos/test_env/carla-0.9.10-py3.7-linux-x86_64.egg")
 import carla
 import gymnasium as gym
 import numpy as np
@@ -17,7 +17,8 @@ from carla import ColorConverter as cc
 from gymnasium import spaces
 
 import util.carla_logger as carla_logger
-from util.misc import _vec_decompose, delta_angle_between
+from util.misc import vec_decompose, delta_angle_between
+from util.route_planner import RoutePlanner
 
 
 class CarlaEnv(gym.Env):
@@ -46,7 +47,7 @@ class CarlaEnv(gym.Env):
         self.collision_occured = False
         self.collision_bp = self.world.get_blueprint_library().find("sensor.other.collision")
 
-        # Add camera sensor
+        # Add Top down Camera sensor
         self.camera_img = np.zeros((self.CAM_RES, self.CAM_RES, 3), dtype=np.uint8)
         self.camera_trans = carla.Transform(carla.Location(x=0.8, z=60), carla.Rotation(pitch=-90))
         self.camera_bp = self.world.get_blueprint_library().find("sensor.camera.rgb")
@@ -99,8 +100,8 @@ class CarlaEnv(gym.Env):
         a_t_absolute = np.array([accel.x, accel.y])
 
         # decompose v and a to tangential and normal in ego coordinates
-        v_t = _vec_decompose(v_t_absolute, ego_heading_vec)
-        a_t = _vec_decompose(a_t_absolute, ego_heading_vec)
+        v_t = vec_decompose(v_t_absolute, ego_heading_vec)
+        a_t = vec_decompose(a_t_absolute, ego_heading_vec)
 
         pos_err_vec = np.array((ego_x, ego_y)) - self.current_wpt[0:2]
 
@@ -138,10 +139,11 @@ class CarlaEnv(gym.Env):
             self.state_info["peds_vel"].append(-1*target_ped.get_velocity().y)
 
     def _collision_event(self, event):
-        y_loc = event.transform.location.y
-        # Make sure the collision is in the intersection
-        if y_loc > -30 and y_loc < 30:
-            self.collision_occured = True
+        # y_loc = event.transform.location.y
+        # # Make sure the collision is in the intersection
+        # if y_loc > -30 and y_loc < 30:
+        #     self.collision_occured = True
+        self.collision_occured = True
 
     def _to_display_surface(self, image):
         image.convert(cc.Raw)
@@ -322,7 +324,7 @@ class CarlaEnv(gym.Env):
         return r_tot
 
     def _load_world(self):
-        self.world = self.client.load_world("Town05")
+        self.world = self.client.load_world("Town03")
         self.map = self.world.get_map()
         self.world.set_weather(carla.WeatherParameters.ClearNoon)
 
@@ -330,20 +332,8 @@ class CarlaEnv(gym.Env):
         self.logger.info("connecting to Carla server...")
         self.client = carla.Client(host, port)
         self.client.set_timeout(100.0)
-        self.left_turn_wpts = None
         self._load_world()
         self.logger.info("Carla server port {} connected!".format(port))
-        self.left_turn_wpts = []
-        r1 = [wpt for wpt in self.map.generate_waypoints(0.1) if wpt.road_id == 48 and wpt.lane_id > 0]
-        r1.reverse()
-        self.left_turn_wpts += r1
-        r2 = [wpt for wpt in self.map.generate_waypoints(0.1) if wpt.road_id == 744 and wpt.lane_id > 0]
-        r2.reverse()
-        self.left_turn_wpts += r2
-        r3 = [wpt for wpt in self.map.generate_waypoints(0.1) if wpt.road_id == 30 and wpt.lane_id == 1]
-        r3.reverse()
-        self.left_turn_wpts += r3
-        self.left_turn_wpts = self.left_turn_wpts[280:550]
 
     def _get_delta_yaw(self):
         """
@@ -382,13 +372,13 @@ class CarlaEnv(gym.Env):
             return self.current_wpt, progress
 
     def _get_waypoint(self, location):
-        min_wp = self.left_turn_wpts[0]
+        min_wp = self.waypoints[0]
         index = 0
-        for i, wp in enumerate(self.left_turn_wpts):
+        for i, wp in enumerate(self.waypoints):
             if location.distance(wp.transform.location) < location.distance(min_wp.transform.location):
                 min_wp = wp
                 index = i
-        return min_wp, float(index) / len(self.left_turn_wpts)
+        return min_wp, float(index) / len(self.waypoints)
 
     def _get_future_wpt_angle(self, distances):
         """
@@ -468,46 +458,41 @@ class CarlaEnv(gym.Env):
         self.lane_sensor = None
 
         # Delete sensors, vehicles and walkers
-        while self.actors:
-            (self.actors.pop()).destroy()
+        # while self.actors:
+            # (self.actors.pop()).destroy()
+        self._clear_all_actors(['sensor.other.collision', 'sensor.camera.rgb', 'vehicle.*', 'controller.ai.walker', 'walker.*'])
+
+        self._set_synchronous_mode(False)
 
         # self._load_world()
 
         # Spawn the ego vehicle at a random position between start and dest
         # Start and Destination
-        self.start = self.left_turn_wpts[0].transform
-        self.start.location.z = 10
-        self.dest = self.left_turn_wpts[-1].transform
+        self.start = carla.Transform(carla.Location(x=84, y=-85, z=10), carla.Rotation(yaw=270))
+        self.dest = carla.Transform(carla.Location(x=49, y=-137), carla.Rotation())
 
-        veh1_t = self._transform(103.5,
-            np.random.randint(0, 6) * -8 + 45,
-            -90)
-        veh1_vel = carla.Vector3D(0, -self.desired_speed, 0)
-        veh2_t = self._transform(100.0, 
-            np.random.randint(0, 6) * -8 -10,
-            90)
-        veh2_vel = carla.Vector3D(0, self.desired_speed, 0)
         self.target_vehicles = []
         self.peds = []
-        assert(self.num_veh <= 2)
-        assert(self.num_ped <= 1)
-        if self.num_veh > 0:
-            self.target_vehicles.append(self._try_spawn_random_vehicle(veh1_t, veh1_vel))
-            self.actors.append(self.target_vehicles[-1])
-        if self.num_veh > 1:
-            self.target_vehicles.append(self._try_spawn_random_vehicle(veh2_t, veh2_vel))
-            self.actors.append(self.target_vehicles[-1])
+        assert(self.num_veh <= 3)
+        assert(self.num_ped <= 2)
+        self._spawn_surrounding_close_proximity_vehicles()
+        # Spawn pedestrians
         if self.num_ped > 0:
-            self.peds.append(self._try_spawn_random_ped())
-            self.actors.append(self.peds[-1])
-        self._try_spawn_ego_vehicle_at(self.start)
+            pedestrian = self._try_spawn_random_walker_at(carla.Transform(carla.Location(x=92.7, y=-144, z=10), carla.Rotation(yaw=180)))
+            self.peds.append(pedestrian)
+            self.actors.append(pedestrian)
+        if self.num_ped > 1:
+            self._try_spawn_random_walker_at(carla.Transform(carla.Location(x=74.6, y=-144, z=10), carla.Rotation(yaw=90)))
+            self.peds.append(pedestrian)
+            self.actors.append(pedestrian)
+
+        if self._try_spawn_ego_vehicle_at(self.start) is False:
+            raise Exception("Error: Cannot spawn ego vehicle")
 
         # Add collision sensor
-        self.ego_collision_sensor = self.world.try_spawn_actor(
-            self.collision_bp, carla.Transform(), attach_to=self.ego)
+        self.ego_collision_sensor = self.world.try_spawn_actor(self.collision_bp, carla.Transform(), attach_to=self.ego)
         self.actors.append(self.ego_collision_sensor)
-        self.ego_collision_sensor.listen(
-            lambda event: self._collision_event(event))
+        self.ego_collision_sensor.listen(lambda event: self._collision_event(event))
         self.collision_occured = False
 
         def get_camera_img(data):
@@ -541,8 +526,14 @@ class CarlaEnv(gym.Env):
         # Reset action of last time step
         # TODO:[another kind of action]
         self.last_action = np.array([0.0, 0.0])
+
+        self._set_synchronous_mode(True)
+        
+        self.routeplanner = RoutePlanner(self.ego, self.max_waypt)
+        self.waypoints, _, _ = self.routeplanner.run_step()
         
         self._populate_state_info()
+
 
         # End State variable initialized
         self.isCollided = False
@@ -553,6 +544,83 @@ class CarlaEnv(gym.Env):
 
         return self._get_obs(), copy.deepcopy(self.state_info)
 
+    def _spawn_surrounding_close_proximity_vehicles(self):
+
+        adversary_bp = self._create_vehicle_bluepprint("vehicle.tesla.model3")
+        traffic_manager = self.client.get_trafficmanager(8000)
+        tm_port = traffic_manager.get_port()
+        traffic_manager.global_percentage_speed_difference(10)
+
+        y = -134
+        x = 0
+        for _ in range(self.num_veh):
+            x = x + 15
+            adversary_transform = carla.Transform(carla.Location(x=x, y=y, z=8), carla.Rotation(yaw=0))
+            actor = self.world.try_spawn_actor(adversary_bp, adversary_transform)
+            self.target_vehicles.append(actor)
+            self.actors.append(actor)
+            time.sleep(0.1)
+            actor.apply_control(carla.VehicleControl(throttle=0, steer=0, brake=1))
+            actor.set_autopilot(True, tm_port)
+            traffic_manager.ignore_lights_percentage(actor, 100)
+            traffic_manager.distance_to_leading_vehicle(actor, 10)
+            # traffic_manager.set_route(actor, route)
+        y = -135.5
+        x = 160
+        for _ in range(self.num_veh):
+            x = x - 15
+            adversary_transform = carla.Transform(carla.Location(x=x, y=y, z=10), carla.Rotation(yaw=90))
+            actor = self.world.try_spawn_actor(adversary_bp, adversary_transform)
+            self.target_vehicles.append(actor)
+            self.actors.append(actor)
+            time.sleep(0.1)
+            actor.apply_control(carla.VehicleControl(throttle=0, steer=0, brake=1))
+            actor.set_autopilot(True, tm_port)
+            traffic_manager.ignore_lights_percentage(actor, 100)
+            traffic_manager.distance_to_leading_vehicle(actor, 10)
+            # traffic_manager.set_route(actor, route)
+        
+        x = 82.5
+        y= -148.3
+        for _ in range(self.num_veh):
+            y = y - 15
+            adversary_transform = carla.Transform(carla.Location(x=x, y=y, z=10), carla.Rotation(yaw=180))
+            actor = self.world.try_spawn_actor(adversary_bp, adversary_transform)
+            self.target_vehicles.append(actor)
+            self.actors.append(actor)
+            time.sleep(0.1)
+            actor.apply_control(carla.VehicleControl(throttle=0, steer=0, brake=1))
+            actor.set_autopilot(True, tm_port)
+            traffic_manager.ignore_lights_percentage(actor, 100)
+            traffic_manager.distance_to_leading_vehicle(actor, 10)
+    
+    def _try_spawn_random_walker_at(self, transform):
+        """Try to spawn a walker at specific transform with random bluprint.
+
+        Args:
+        transform: the carla transform object.
+
+        Returns:
+        Bool indicating whether the spawn is successful.
+        """
+        walker_bp = random.choice(self.world.get_blueprint_library().filter('walker.*'))
+        # set as not invencible
+        if walker_bp.has_attribute('is_invincible'):
+            walker_bp.set_attribute('is_invincible', 'false')
+        walker_actor = self.world.try_spawn_actor(walker_bp, transform)
+
+        if walker_actor is not None:
+            walker_controller_bp = self.world.get_blueprint_library().find('controller.ai.walker')
+            walker_controller_actor = self.world.spawn_actor(walker_controller_bp, carla.Transform(), walker_actor)
+            # start walker
+            walker_controller_actor.start()
+            # set walk to random point
+            walker_controller_actor.go_to_location(self.world.get_random_location_from_navigation())
+            # random max speed
+            walker_controller_actor.set_max_speed(1 + random.random())    # max speed between 1 and 2 (default is 1.4 m/s)
+            return walker_actor
+        return None
+    
     def step(self, action):
         current_action = np.array(action) + self.last_action
         current_action = np.clip(
@@ -598,6 +666,22 @@ class CarlaEnv(gym.Env):
             return
         camera_surface = self._to_display_surface(self.og_camera_img)
         display.blit(camera_surface, (0, 0))
+
+    def _clear_all_actors(self, actor_filters):
+        """Clear specific actors."""
+        for actor_filter in actor_filters:
+            for actor in self.world.get_actors().filter(actor_filter):
+                if actor.is_alive:
+                    if actor.type_id == 'controller.ai.walker':
+                        actor.stop()
+                    actor.destroy()
+    
+    def _set_synchronous_mode(self, synchronous=True):
+        """Set whether to use the synchronous mode.
+        """
+        self.settings.synchronous_mode = synchronous
+        self.world.apply_settings(self.settings)
+
 
 if __name__ == "__main__":
     import yaml

@@ -4,7 +4,7 @@ env:
   # which environment to learn in
   #   either carla-v0 or carla_mpc-v0
   name: carla_mpc-v0
-  host: "192.168.240.5"
+  host: "192.168.240.4"
   dt: 0.025
   # Change this to match your server user
   port: 2000
@@ -15,6 +15,7 @@ env:
   num_ped: 0
   max_steps: 500
   CAM_RES: 1024
+  max_waypt: 12
   reward_weights:
     # Route completion reward
     c_completion: 100.0
