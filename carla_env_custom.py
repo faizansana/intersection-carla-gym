@@ -138,13 +138,6 @@ class CarlaEnv(gym.Env):
             self.state_info["peds_dist_x"].append(e_loc.x - t_loc.x)
             self.state_info["peds_vel"].append(-1*target_ped.get_velocity().y)
 
-    def _collision_event(self, event):
-        # y_loc = event.transform.location.y
-        # # Make sure the collision is in the intersection
-        # if y_loc > -30 and y_loc < 30:
-        #     self.collision_occured = True
-        self.collision_occured = True
-
     def _to_display_surface(self, image):
         image.convert(cc.Raw)
         array = np.frombuffer(image.raw_data, dtype=np.dtype("uint8"))
@@ -179,40 +172,6 @@ class CarlaEnv(gym.Env):
             bp.set_attribute("color", color)
         return bp
 
-    def _try_spawn_random_vehicle(self, transform, vel):
-        vehicle = self.world.try_spawn_actor(self.ego_bp, transform)
-        if vehicle is not None:
-            vehicle.set_simulate_physics(True)
-            vehicle.set_target_velocity(vel)
-            collision_sensor = self.world.try_spawn_actor(
-                self.collision_bp, carla.Transform(), attach_to=vehicle)
-            self.actors.append(collision_sensor)
-            collision_sensor.listen(
-                lambda event: self._collision_event(event))
-            return vehicle
-        raise Exception("Failed to spawn target vehicle")
-
-    def _try_spawn_random_ped(self):
-        blueprintsWalkers = self.world.get_blueprint_library().filter("vehicle.yamaha.yzf")
-        walker_bp = random.choice(blueprintsWalkers)
-        transform = carla.Transform()
-        transform.location.x = 112
-        transform.location.z = 0.5
-        transform.location.y = 1.5
-        # transform.location.y = 5 + -np.random.randint(0, 10)
-        transform.rotation.yaw += -90
-        ped = self.world.try_spawn_actor(walker_bp, transform)
-        if ped is not None:
-            ped.set_target_velocity(carla.Vector3D(0, -2, 0))
-            ped.set_simulate_physics(True)
-            collision_sensor = self.world.try_spawn_actor(
-                self.collision_bp, carla.Transform(), attach_to=ped)
-            self.actors.append(collision_sensor)
-            collision_sensor.listen(
-                lambda event: self._collision_event(event))
-            return ped
-        raise Exception("Failed to spawn ped")
-
     def _terminal(self):
         """Calculate whether to terminate the current episode."""
         # Get ego state
@@ -238,7 +197,7 @@ class CarlaEnv(gym.Env):
             return True
 
         # If out of lane
-        if abs(self.state_info["lateral_dist_t"]) > 2.0:
+        if abs(self.state_info["lateral_dist_t"]) > 100.0:
             if self.state_info["lateral_dist_t"] > 0:
                 self.logger.debug("Left Lane invasion!")
             else:
@@ -278,9 +237,7 @@ class CarlaEnv(gym.Env):
             Bool indicating whether the spawn is successful.
         """
         vehicle = self.world.spawn_actor(self.ego_bp, transform)
-        time.sleep(1)
         if vehicle is not None:
-            self.actors.append(vehicle)
             self.ego = vehicle
             return True
         return False
@@ -333,6 +290,7 @@ class CarlaEnv(gym.Env):
         self.client = carla.Client(host, port)
         self.client.set_timeout(100.0)
         self._load_world()
+
         self.logger.info("Carla server port {} connected!".format(port))
 
     def _get_delta_yaw(self):
@@ -455,20 +413,17 @@ class CarlaEnv(gym.Env):
 
     def reset(self):
         self.ego_collision_sensor = None
-        self.lane_sensor = None
+        self.camera_sensor = None
+        self.collision_occured = False
 
         # Delete sensors, vehicles and walkers
-        # while self.actors:
-            # (self.actors.pop()).destroy()
         self._clear_all_actors(['sensor.other.collision', 'sensor.camera.rgb', 'vehicle.*', 'controller.ai.walker', 'walker.*'])
 
         self._set_synchronous_mode(False)
 
-        # self._load_world()
-
         # Spawn the ego vehicle at a random position between start and dest
         # Start and Destination
-        self.start = carla.Transform(carla.Location(x=84, y=-85, z=10), carla.Rotation(yaw=270))
+        self.start = carla.Transform(carla.Location(x=84, y=-120, z=10), carla.Rotation(yaw=270))
         self.dest = carla.Transform(carla.Location(x=49, y=-137), carla.Rotation())
 
         self.target_vehicles = []
@@ -480,60 +435,40 @@ class CarlaEnv(gym.Env):
         if self.num_ped > 0:
             pedestrian = self._try_spawn_random_walker_at(carla.Transform(carla.Location(x=92.7, y=-144, z=10), carla.Rotation(yaw=180)))
             self.peds.append(pedestrian)
-            self.actors.append(pedestrian)
         if self.num_ped > 1:
             self._try_spawn_random_walker_at(carla.Transform(carla.Location(x=74.6, y=-144, z=10), carla.Rotation(yaw=90)))
             self.peds.append(pedestrian)
-            self.actors.append(pedestrian)
 
         if self._try_spawn_ego_vehicle_at(self.start) is False:
             raise Exception("Error: Cannot spawn ego vehicle")
 
+        self.routeplanner = RoutePlanner(self.ego, self.max_waypt)
+        self.waypoints, _, _ = self.routeplanner.run_step()
+        
         # Add collision sensor
-        self.ego_collision_sensor = self.world.try_spawn_actor(self.collision_bp, carla.Transform(), attach_to=self.ego)
-        self.actors.append(self.ego_collision_sensor)
-        self.ego_collision_sensor.listen(lambda event: self._collision_event(event))
-        self.collision_occured = False
+        self.ego_collision_sensor = self.world.spawn_actor(self.collision_bp, carla.Transform(), attach_to=self.ego)
+        self.ego_collision_sensor.listen(lambda event: collision_event(event))
+        
+        def collision_event(event):
+            self.collision_occured = True
+
+        self.camera_sensor = self.world.spawn_actor(self.camera_bp, self.camera_trans, attach_to=self.ego)
+        self.camera_sensor.listen(lambda data: get_camera_img(data))
 
         def get_camera_img(data):
             self.og_camera_img = data
-        self.camera_sensor = self.world.spawn_actor(self.camera_bp, self.camera_trans, attach_to=self.ego)
-        self.actors.append(self.camera_sensor)
-        self.camera_sensor.listen(lambda data: get_camera_img(data))
 
         # Update timesteps
         self.time_step = 1
 
         # Enable sync mode
-        self.settings.synchronous_mode = True
-        self.settings.no_rendering_node = not self.render
-        self.world.apply_settings(self.settings)
-
-        # Set the initial speed to desired speed
-        yaw = (self.start.rotation.yaw) * np.pi / 180.0
-        init_fwd_speed = 0
-        init_speed = carla.Vector3D(
-                    x=init_fwd_speed * np.cos(yaw),
-                    y=init_fwd_speed * np.sin(yaw))
-        self.ego.set_target_velocity(init_speed)
-        physics = self.ego.get_physics_control()
-        physics.gear_switch_time *= 0.0
-        physics.use_gear_autobox = False
-        self.ego.apply_physics_control(physics)
-        for _ in range(2):
-            self.world.tick()
+        self._set_synchronous_mode(True)
 
         # Reset action of last time step
         # TODO:[another kind of action]
         self.last_action = np.array([0.0, 0.0])
 
-        self._set_synchronous_mode(True)
-        
-        self.routeplanner = RoutePlanner(self.ego, self.max_waypt)
-        self.waypoints, _, _ = self.routeplanner.run_step()
-        
         self._populate_state_info()
-
 
         # End State variable initialized
         self.isCollided = False
@@ -558,7 +493,6 @@ class CarlaEnv(gym.Env):
             adversary_transform = carla.Transform(carla.Location(x=x, y=y, z=8), carla.Rotation(yaw=0))
             actor = self.world.try_spawn_actor(adversary_bp, adversary_transform)
             self.target_vehicles.append(actor)
-            self.actors.append(actor)
             time.sleep(0.1)
             actor.apply_control(carla.VehicleControl(throttle=0, steer=0, brake=1))
             actor.set_autopilot(True, tm_port)
@@ -572,7 +506,6 @@ class CarlaEnv(gym.Env):
             adversary_transform = carla.Transform(carla.Location(x=x, y=y, z=10), carla.Rotation(yaw=90))
             actor = self.world.try_spawn_actor(adversary_bp, adversary_transform)
             self.target_vehicles.append(actor)
-            self.actors.append(actor)
             time.sleep(0.1)
             actor.apply_control(carla.VehicleControl(throttle=0, steer=0, brake=1))
             actor.set_autopilot(True, tm_port)
@@ -587,7 +520,6 @@ class CarlaEnv(gym.Env):
             adversary_transform = carla.Transform(carla.Location(x=x, y=y, z=10), carla.Rotation(yaw=180))
             actor = self.world.try_spawn_actor(adversary_bp, adversary_transform)
             self.target_vehicles.append(actor)
-            self.actors.append(actor)
             time.sleep(0.1)
             actor.apply_control(carla.VehicleControl(throttle=0, steer=0, brake=1))
             actor.set_autopilot(True, tm_port)
@@ -644,8 +576,7 @@ class CarlaEnv(gym.Env):
             )
         self.ego.apply_control(act)
 
-        for _ in range(1):
-            self.world.tick()
+        self.world.tick()
 
         self._populate_state_info()
 
@@ -658,8 +589,7 @@ class CarlaEnv(gym.Env):
         isDone = self._terminal()
         current_reward = self._get_reward(np.array(current_action))
 
-        return (self._get_obs(), current_reward, isDone,
-                copy.deepcopy(self.state_info))
+        return (self._get_obs(), current_reward, isDone, copy.deepcopy(self.state_info))
 
     def display(self, display):
         if not self.og_camera_img:
