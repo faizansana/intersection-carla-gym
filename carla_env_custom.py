@@ -60,7 +60,6 @@ class CarlaEnv(gym.Env):
 
         # Set fixed simulation step for synchronous mode
         self.settings = self.world.get_settings()
-        self.settings.fixed_delta_seconds = self.dt
 
         # Record the time of total steps and resetting steps
         self.total_step = 0
@@ -487,9 +486,9 @@ class CarlaEnv(gym.Env):
         traffic_manager.global_percentage_speed_difference(10)
 
         y = -134
-        x = 0
+        x = 75
         for _ in range(self.num_veh):
-            x = x + 15
+            x = x - 15
             adversary_transform = carla.Transform(carla.Location(x=x, y=y, z=8), carla.Rotation(yaw=0))
             actor = self.world.try_spawn_actor(adversary_bp, adversary_transform)
             self.target_vehicles.append(actor)
@@ -500,10 +499,10 @@ class CarlaEnv(gym.Env):
             traffic_manager.distance_to_leading_vehicle(actor, 10)
             # traffic_manager.set_route(actor, route)
         y = -135.5
-        x = 160
+        x = 90
         for _ in range(self.num_veh):
-            x = x - 15
-            adversary_transform = carla.Transform(carla.Location(x=x, y=y, z=10), carla.Rotation(yaw=90))
+            x = x + 15
+            adversary_transform = carla.Transform(carla.Location(x=x, y=y, z=10), carla.Rotation(yaw=180))
             actor = self.world.try_spawn_actor(adversary_bp, adversary_transform)
             self.target_vehicles.append(actor)
             time.sleep(0.1)
@@ -514,10 +513,10 @@ class CarlaEnv(gym.Env):
             # traffic_manager.set_route(actor, route)
         
         x = 82.5
-        y= -148.3
+        y= -135
         for _ in range(self.num_veh):
             y = y - 15
-            adversary_transform = carla.Transform(carla.Location(x=x, y=y, z=10), carla.Rotation(yaw=180))
+            adversary_transform = carla.Transform(carla.Location(x=x, y=y, z=10), carla.Rotation(yaw=90))
             actor = self.world.try_spawn_actor(adversary_bp, adversary_transform)
             self.target_vehicles.append(actor)
             time.sleep(0.1)
@@ -609,8 +608,11 @@ class CarlaEnv(gym.Env):
     def _set_synchronous_mode(self, synchronous=True):
         """Set whether to use the synchronous mode.
         """
-        self.settings.synchronous_mode = synchronous
-        self.world.apply_settings(self.settings)
+        settings = self.world.get_settings()
+        if synchronous:
+            settings.fixed_delta_seconds = 0.05
+        settings.synchronous_mode = synchronous
+        self.world.apply_settings(settings)
 
 
 if __name__ == "__main__":
