@@ -17,7 +17,7 @@ from carla import ColorConverter as cc
 from gymnasium import spaces
 
 import util.carla_logger as carla_logger
-from util.misc import vec_decompose, delta_angle_between
+import util.misc as helper
 from util.route_planner import RoutePlanner
 from local_carla_agents.navigation.local_planner import LocalPlanner
 from local_carla_agents.navigation.global_route_planner_dao import GlobalRoutePlannerDAO
@@ -37,8 +37,11 @@ class CarlaEnv(gym.Env):
         self.logger.info(f"Env running on server {self.host}")
 
         # action and observation space
-        self.action_space = spaces.Box(np.array([-2.0, -2.0]), np.array([2.0, 2.0]), dtype=np.float32)
-        self.state_space = spaces.Box(low=-50.0, high=50.0, shape=(12 + 3*self.num_veh + 3*self.num_ped, ), dtype=np.float32)
+        # self.action_space = spaces.Box(np.array([-2.0, -2.0]), np.array([2.0, 2.0]), dtype=np.float32)
+        self.action_space = spaces.Box(low=0, high=1.0, shape=(1,), dtype=np.float32)
+        num_vehicles = 1 + 3 * self.num_veh
+        num_pedestrians = 2*self.num_ped
+        self.observation_space = spaces.Box(low=-50.0, high=50.0, shape=(8 + 3*num_vehicles + 3*num_pedestrians, ), dtype=np.float32)
 
         # Connect to carla server and get world object
         self._make_carla_client(self.host, self.port)
@@ -74,7 +77,7 @@ class CarlaEnv(gym.Env):
         self.actors = []
 
         # Future distances to get heading
-        self.distances = [1., 5., 10.]
+        # self.distances = [1., 5., 10.]
         self.target_vehicles = []
         self.peds = []
 
@@ -102,7 +105,7 @@ class CarlaEnv(gym.Env):
         ego_heading_vec = np.array((np.cos(ego_heading),
                                     np.sin(ego_heading)))
 
-        future_angles = self._get_future_wpt_angle(distances=self.distances)
+        # future_angles = self._get_future_wpt_angle(distances=self.distances)
 
         # Get dynamics info
         velocity = self.ego.get_velocity()
@@ -112,15 +115,15 @@ class CarlaEnv(gym.Env):
         a_t_absolute = np.array([accel.x, accel.y])
 
         # decompose v and a to tangential and normal in ego coordinates
-        v_t = vec_decompose(v_t_absolute, ego_heading_vec)
-        a_t = vec_decompose(a_t_absolute, ego_heading_vec)
+        v_t = helper.vec_decompose(v_t_absolute, ego_heading_vec)
+        a_t = helper.vec_decompose(a_t_absolute, ego_heading_vec)
 
         pos_err_vec = np.array((ego_x, ego_y)) - self.current_wpt[0:2]
 
         self.state_info["velocity_t"] = v_t
         self.state_info["acceleration_t"] = a_t
 
-        # self.state_info["ego_heading"] = ego_heading
+        self.state_info["ego_heading"] = ego_heading
         self.state_info["delta_yaw_t"] = delta_yaw
         self.state_info["dyaw_dt_t"] = dyaw_dt
 
@@ -128,7 +131,7 @@ class CarlaEnv(gym.Env):
                                             np.sign(pos_err_vec[0] * road_heading[1] - \
                                                     pos_err_vec[1] * road_heading[0])
         self.state_info["action_t_1"] = self.last_action
-        self.state_info["angles_t"] = future_angles
+        # self.state_info["angles_t"] = future_angles
         self.state_info["progress"] = progress
 
         self.state_info["target_vehicles_dist_y"] = []
@@ -209,7 +212,7 @@ class CarlaEnv(gym.Env):
             return True
 
         # If out of lane
-        if abs(self.state_info["lateral_dist_t"]) > 100.0:
+        if abs(self.state_info["lateral_dist_t"]) > 2.0:
             if self.state_info["lateral_dist_t"] > 0:
                 self.logger.debug("Left Lane invasion!")
             else:
@@ -398,7 +401,7 @@ class CarlaEnv(gym.Env):
             (1, )) / 5      
         action_last = self.state_info["action_t_1"] / 3
 
-        future_angles = self.state_info["angles_t"] / 90
+        # future_angles = self.state_info["angles_t"] / 90
         target_dist_y = np.array(self.state_info["target_vehicles_dist_y"]).reshape((len(self.state_info["target_vehicles_dist_y"]), )) / 40
         target_dist_x = np.array(self.state_info["target_vehicles_dist_x"]).reshape((len(self.state_info["target_vehicles_dist_y"]), )) / 30
         target_vel = np.array(self.state_info["target_vehicles_vel"]).reshape((len(self.state_info["target_vehicles_dist_y"]), )) / 7
@@ -409,7 +412,7 @@ class CarlaEnv(gym.Env):
         
         info_vec = np.concatenate([
             velocity_t, accel_t, delta_yaw_t, dyaw_dt_t, lateral_dist_t,
-            action_last, future_angles, target_dist_y, target_dist_x, target_vel, ped_dist_y, ped_dist_x, ped_vel
+            action_last, target_dist_y, target_dist_x, target_vel, ped_dist_y, ped_dist_x, ped_vel
         ], axis=0)
         info_vec = info_vec.squeeze()
 
@@ -481,7 +484,7 @@ class CarlaEnv(gym.Env):
 
         # Reset action of last time step
         # TODO:[another kind of action]
-        self.last_action = np.array([0.0, 0.0])
+        self.last_action = np.array([0.0], dtype=np.float32)
 
         self._populate_state_info()
 
@@ -501,6 +504,16 @@ class CarlaEnv(gym.Env):
         tm_port = traffic_manager.get_port()
         traffic_manager.global_percentage_speed_difference(10)
 
+        # Vehicle in same lane as ego vehicle
+        adversary_transform = carla.Transform(carla.Location(x=84, y=-100, z=10), carla.Rotation(yaw=270))
+        actor = self.world.try_spawn_actor(adversary_bp, adversary_transform)
+        self.target_vehicles.append(actor)
+        time.sleep(0.1)
+        actor.apply_control(carla.VehicleControl(throttle=0, steer=0, brake=1))
+        actor.set_autopilot(True, tm_port)
+        traffic_manager.ignore_lights_percentage(actor, 100)
+        traffic_manager.distance_to_leading_vehicle(actor, 5)
+
         y = -134
         x = 75
         for _ in range(self.num_veh):
@@ -512,7 +525,7 @@ class CarlaEnv(gym.Env):
             actor.apply_control(carla.VehicleControl(throttle=0, steer=0, brake=1))
             actor.set_autopilot(True, tm_port)
             traffic_manager.ignore_lights_percentage(actor, 100)
-            traffic_manager.distance_to_leading_vehicle(actor, 10)
+            traffic_manager.distance_to_leading_vehicle(actor, 5)
             # traffic_manager.set_route(actor, route)
         y = -135.5
         x = 90
@@ -525,7 +538,7 @@ class CarlaEnv(gym.Env):
             actor.apply_control(carla.VehicleControl(throttle=0, steer=0, brake=1))
             actor.set_autopilot(True, tm_port)
             traffic_manager.ignore_lights_percentage(actor, 100)
-            traffic_manager.distance_to_leading_vehicle(actor, 10)
+            traffic_manager.distance_to_leading_vehicle(actor, 5)
             # traffic_manager.set_route(actor, route)
         
         x = 82.5
@@ -539,7 +552,7 @@ class CarlaEnv(gym.Env):
             actor.apply_control(carla.VehicleControl(throttle=0, steer=0, brake=1))
             actor.set_autopilot(True, tm_port)
             traffic_manager.ignore_lights_percentage(actor, 100)
-            traffic_manager.distance_to_leading_vehicle(actor, 10)
+            traffic_manager.distance_to_leading_vehicle(actor, 5)
     
     def _try_spawn_random_walker_at(self, transform):
         """Try to spawn a walker at specific transform with random bluprint.
@@ -568,13 +581,17 @@ class CarlaEnv(gym.Env):
             return walker_actor
         return None
     
-    def step(self, action):
-        current_action = np.array(action) + self.last_action
-        self.routeplanner.set_speed(current_action[0])
+    def step(self, action: np.ndarray):
+        current_action = action + self.last_action
+        # Map action to [0, self.desired_speed]
+        speed_in_vms = current_action * self.desired_speed
+        # Convert m/s to km/h since the planner takes km/h as input
+        speed_in_km_h = speed_in_vms * 3.6
+
+        self.routeplanner.set_speed(speed_in_km_h[0])
         control = self.routeplanner.run_step(debug=True)
         self.ego.apply_control(control)
 
-        current_action = np.clip(current_action, -1.0, 1.0, dtype=np.float32)
         self.world.tick()
 
         self._populate_state_info()
@@ -630,7 +647,7 @@ if __name__ == "__main__":
     
     try:
         while True:
-            obs, reward, done, info = env.step([30, 0.0])
+            obs, reward, done, info = env.step(np.array([1.0], dtype=np.float32))
             if done:
                 obs, info = env.reset()
             
