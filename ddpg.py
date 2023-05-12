@@ -25,7 +25,7 @@ if __name__ == "__main__":
     TRAINING_TIMESTEPS = 2e6
 
     # Setup logging and callback
-    model_dir = os.path.join(os.getcwd(), "Training", "Models")
+    model_dir = os.path.join("Training", "Models")
     model_save_path = os.path.join(model_dir, f"ddpg_carla_{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}")
     callback = train_config.SaveOnBestTrainingRewardCallback(check_freq=20, log_dir=model_dir, save_path=model_save_path, verbose=0)
 
