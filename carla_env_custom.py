@@ -426,7 +426,7 @@ class CarlaEnv(gym.Env):
         veh1_t.rotation.yaw += yaw
         return veh1_t
 
-    def reset(self):
+    def reset(self, seed=None):
         self.ego_collision_sensor = None
         self.camera_sensor = None
         self.collision_occured = False
@@ -605,7 +605,7 @@ class CarlaEnv(gym.Env):
         isDone = self._terminal()
         current_reward = self._get_reward(np.array(current_action))
 
-        return (self._get_obs(), current_reward, isDone, copy.deepcopy(self.state_info))
+        return (self._get_obs(), current_reward, isDone, isDone, copy.deepcopy(self.state_info))
 
     def display(self, display):
         if not self.og_camera_img:
