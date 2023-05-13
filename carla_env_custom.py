@@ -10,11 +10,12 @@ from typing import Dict
 
 sys.path.append("/home/docker/repos/test_env/carla-0.9.10-py3.7-linux-x86_64.egg")
 import carla
-import gymnasium as gym
+# import gymnasium as gym
+import gym
 import numpy as np
-import pygame
+# import pygame
 from carla import ColorConverter as cc
-from gymnasium import spaces
+from gym import spaces
 
 import util.carla_logger as carla_logger
 import util.misc as helper
@@ -153,13 +154,13 @@ class CarlaEnv(gym.Env):
             self.state_info["peds_dist_x"].append(e_loc.x - t_loc.x)
             self.state_info["peds_vel"].append(-1*target_ped.get_velocity().y)
 
-    def _to_display_surface(self, image):
-        image.convert(cc.Raw)
-        array = np.frombuffer(image.raw_data, dtype=np.dtype("uint8"))
-        array = np.reshape(array, (image.height, image.width, 4))
-        array = array[:, :, :3]
-        array = array[:, :, ::-1]
-        return pygame.surfarray.make_surface(array.swapaxes(0, 1))
+    # def _to_display_surface(self, image):
+    #     image.convert(cc.Raw)
+    #     array = np.frombuffer(image.raw_data, dtype=np.dtype("uint8"))
+    #     array = np.reshape(array, (image.height, image.width, 4))
+    #     array = array[:, :, :3]
+    #     array = array[:, :, ::-1]
+    #     return pygame.surfarray.make_surface(array.swapaxes(0, 1))
 
     def _create_vehicle_bluepprint(self,
                                    actor_filter,
@@ -495,12 +496,13 @@ class CarlaEnv(gym.Env):
         self.isOutOfLane = False
         self.isSpecialSpeed = False
 
-        return self._get_obs(), copy.deepcopy(self.state_info)
+        # return self._get_obs(), copy.deepcopy(self.state_info)
+        return self._get_obs()
 
     def _spawn_surrounding_close_proximity_vehicles(self):
 
         adversary_bp = self._create_vehicle_bluepprint("vehicle.tesla.model3")
-        traffic_manager = self.client.get_trafficmanager(8000)
+        traffic_manager = self.client.get_trafficmanager(8001)
         tm_port = traffic_manager.get_port()
         traffic_manager.global_percentage_speed_difference(10)
 
@@ -582,7 +584,7 @@ class CarlaEnv(gym.Env):
         return None
     
     def step(self, action: np.ndarray):
-        current_action = action + self.last_action
+        current_action = action
         # Map action to [0, self.desired_speed]
         speed_in_vms = current_action * self.desired_speed
         # Convert m/s to km/h since the planner takes km/h as input
@@ -605,13 +607,13 @@ class CarlaEnv(gym.Env):
         isDone = self._terminal()
         current_reward = self._get_reward(np.array(current_action))
 
-        return (self._get_obs(), current_reward, isDone, isDone, copy.deepcopy(self.state_info))
+        return (self._get_obs(), current_reward, isDone, copy.deepcopy(self.state_info))
 
     def display(self, display):
         if not self.og_camera_img:
             return
-        camera_surface = self._to_display_surface(self.og_camera_img)
-        display.blit(camera_surface, (0, 0))
+        # camera_surface = self._to_display_surface(self.og_camera_img)
+        # display.blit(camera_surface, (0, 0))
 
     def _clear_all_actors(self, actor_filters):
         """Clear specific actors."""
@@ -634,6 +636,7 @@ class CarlaEnv(gym.Env):
 
 if __name__ == "__main__":
     import yaml
+    import pygame
 
     # Make pygame display
     pygame.init()
@@ -647,8 +650,9 @@ if __name__ == "__main__":
     
     try:
         while True:
-            obs, reward, done, info = env.step(np.array([1.0], dtype=np.float32))
+            obs, reward, done, done, info = env.step(np.array([1.0], dtype=np.float32))
             if done:
+                print("Reward: ", reward)
                 obs, info = env.reset()
             
             env.display(display=display)
