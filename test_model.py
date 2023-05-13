@@ -22,16 +22,16 @@ if __name__ == "__main__":
     (1024, 1024),
     pygame.HWSURFACE | pygame.DOUBLEBUF)
 
-    obs, info = env.reset()
+    obs = env.reset()
     
     try:
         while True:
             action, _states = model.predict(obs, deterministic=True)
             print("Action: ", action)
-            obs, reward, done, done, info = env.step(action)
+            obs, reward, done, info = env.step(action)
             if done:
                 print("Reward: ", reward)
-                obs, info = env.reset()
+                obs= env.reset()
             
             env.display(display=display)
             pygame.display.flip()

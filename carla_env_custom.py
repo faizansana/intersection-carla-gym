@@ -13,7 +13,7 @@ import carla
 # import gymnasium as gym
 import gym
 import numpy as np
-# import pygame
+import pygame
 from carla import ColorConverter as cc
 from gym import spaces
 
@@ -154,13 +154,13 @@ class CarlaEnv(gym.Env):
             self.state_info["peds_dist_x"].append(e_loc.x - t_loc.x)
             self.state_info["peds_vel"].append(-1*target_ped.get_velocity().y)
 
-    # def _to_display_surface(self, image):
-    #     image.convert(cc.Raw)
-    #     array = np.frombuffer(image.raw_data, dtype=np.dtype("uint8"))
-    #     array = np.reshape(array, (image.height, image.width, 4))
-    #     array = array[:, :, :3]
-    #     array = array[:, :, ::-1]
-    #     return pygame.surfarray.make_surface(array.swapaxes(0, 1))
+    def _to_display_surface(self, image):
+        image.convert(cc.Raw)
+        array = np.frombuffer(image.raw_data, dtype=np.dtype("uint8"))
+        array = np.reshape(array, (image.height, image.width, 4))
+        array = array[:, :, :3]
+        array = array[:, :, ::-1]
+        return pygame.surfarray.make_surface(array.swapaxes(0, 1))
 
     def _create_vehicle_bluepprint(self,
                                    actor_filter,
@@ -612,8 +612,8 @@ class CarlaEnv(gym.Env):
     def display(self, display):
         if not self.og_camera_img:
             return
-        # camera_surface = self._to_display_surface(self.og_camera_img)
-        # display.blit(camera_surface, (0, 0))
+        camera_surface = self._to_display_surface(self.og_camera_img)
+        display.blit(camera_surface, (0, 0))
 
     def _clear_all_actors(self, actor_filters):
         """Clear specific actors."""
@@ -646,14 +646,14 @@ if __name__ == "__main__":
 
     cfg = yaml.safe_load(open("config.yaml", "r"))
     env = CarlaEnv(cfg=cfg)
-    obs, info = env.reset()
+    obs = env.reset()
     
     try:
         while True:
-            obs, reward, done, done, info = env.step(np.array([1.0], dtype=np.float32))
+            obs, reward, done, info = env.step(np.array([1.0], dtype=np.float32))
             if done:
                 print("Reward: ", reward)
-                obs, info = env.reset()
+                obs = env.reset()
             
             env.display(display=display)
             pygame.display.flip()
