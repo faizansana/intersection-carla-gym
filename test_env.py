@@ -1,7 +1,4 @@
 
-import sys
-sys.path.append("/home/docker/src/src/carla-0.9.10-py3.7-linux-x86_64.egg")
-
 import stable_baselines3.common.env_checker
 import yaml
 

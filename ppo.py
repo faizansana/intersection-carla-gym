@@ -1,7 +1,5 @@
 import datetime
 import os
-import sys
-sys.path.append("/home/docker/src/src/carla-0.9.10-py3.7-linux-x86_64.egg")
 
 import yaml
 from stable_baselines3 import PPO
