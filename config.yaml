@@ -4,7 +4,6 @@ env:
   # which environment to learn in
   #   either carla-v0 or carla_mpc-v0
   name: carla_mpc-v0
-  host: "192.168.240.5"
   dt: 0.05
   # Change this to match your server user
   port: 2000

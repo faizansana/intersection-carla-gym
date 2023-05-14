@@ -27,14 +27,14 @@ from local_carla_agents.navigation.global_route_planner import GlobalRoutePlanne
 class CarlaEnv(gym.Env):
     """An OpenAI gym wrapper for CARLA simulator."""
 
-    def __init__(self, cfg: Dict):
+    def __init__(self, cfg: Dict, host: str):
         for k, v in cfg["env"].items():
             setattr(self, k, v)
-        host_num = self.host.split("_")[-1]
+        host_num = host.split("_")[-1]
         exp_name = cfg["exp_name"]
         outdir = cfg["output_dir"]
         self.logger = carla_logger.setup_carla_logger(output_dir=outdir, exp_name=exp_name, rank=host_num)
-        self.logger.info(f"Env running on server {self.host}")
+        self.logger.info(f"Env running on server {host}")
 
         # action and observation space
         # self.action_space = spaces.Box(np.array([-2.0, -2.0]), np.array([2.0, 2.0]), dtype=np.float32)
@@ -44,7 +44,7 @@ class CarlaEnv(gym.Env):
         self.observation_space = spaces.Box(low=-50.0, high=50.0, shape=(8 + 3*num_vehicles + 3*num_pedestrians, ), dtype=np.float32)
 
         # Connect to carla server and get world object
-        self._make_carla_client(self.host, self.port)
+        self._make_carla_client(host, self.port)
 
         # Create the ego vehicle blueprint
         self.ego_bp = self._create_vehicle_bluepprint(self.ego_vehicle_filter, color="49,8,8")
