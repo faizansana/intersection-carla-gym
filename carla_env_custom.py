@@ -40,9 +40,9 @@ class CarlaEnv(gym.Env):
         # action and observation space
         # self.action_space = spaces.Box(np.array([-2.0, -2.0]), np.array([2.0, 2.0]), dtype=np.float32)
         self.action_space = spaces.Box(low=0, high=1.0, shape=(1,), dtype=np.float32)
-        num_vehicles = 1 + 3 * self.num_veh
+        num_vehicles_excluding_ego = 3 * self.num_veh
         num_pedestrians = 2*self.num_ped
-        self.observation_space = spaces.Box(low=-50.0, high=50.0, shape=(8 + 3*num_vehicles + 3*num_pedestrians, ), dtype=np.float32)
+        self.observation_space = spaces.Box(low=-50.0, high=50.0, shape=(8 + 3*num_vehicles_excluding_ego + 3*num_pedestrians, ), dtype=np.float32)
 
         # Connect to carla server and get world object
         self._make_carla_client(self.host, self.port)
@@ -56,7 +56,7 @@ class CarlaEnv(gym.Env):
 
         # Add Top down Camera sensor
         self.camera_img = np.zeros((self.CAM_RES, self.CAM_RES, 3), dtype=np.uint8)
-        self.camera_trans = carla.Transform(carla.Location(x=0.8, z=25), carla.Rotation(pitch=-90))
+        self.camera_trans = carla.Transform(carla.Location(x=0.8, z=50), carla.Rotation(pitch=-90))
         self.camera_bp = self.world.get_blueprint_library().find("sensor.camera.rgb")
         # Modify the attributes of the blueprint to set image resolution and field of view.
         self.camera_bp.set_attribute("image_size_x", str(self.CAM_RES))
@@ -89,7 +89,7 @@ class CarlaEnv(gym.Env):
         global_planner = GlobalRoutePlanner(global_planner_dao)
         global_planner.setup()
         # Start and Destination
-        self.start = carla.Transform(carla.Location(x=84, y=-90, z=10), carla.Rotation(yaw=270))
+        self.start = carla.Transform(carla.Location(x=84, y=-120, z=10), carla.Rotation(yaw=270))
         self.dest = carla.Transform(carla.Location(x=49, y=-137), carla.Rotation())
         self.waypoints = global_planner.trace_route(self.start.location, self.dest.location)
 
@@ -460,6 +460,7 @@ class CarlaEnv(gym.Env):
             raise Exception("Error: Cannot spawn ego vehicle")
 
         # self.routeplanner = RoutePlanner(self.ego, self.max_waypt)
+        # time.sleep(1)
         self.routeplanner = LocalPlanner(self.ego)
         self.routeplanner.set_global_plan(self.waypoints)
         # self.waypoints, _, _ = self.routeplanner.run_step()
@@ -507,20 +508,24 @@ class CarlaEnv(gym.Env):
         traffic_manager.global_percentage_speed_difference(10)
 
         # Vehicle in same lane as ego vehicle
-        adversary_transform = carla.Transform(carla.Location(x=84, y=-100, z=10), carla.Rotation(yaw=270))
-        actor = self.world.try_spawn_actor(adversary_bp, adversary_transform)
-        self.target_vehicles.append(actor)
-        time.sleep(0.1)
-        actor.apply_control(carla.VehicleControl(throttle=0, steer=0, brake=1))
-        actor.set_autopilot(True, tm_port)
-        traffic_manager.ignore_lights_percentage(actor, 100)
-        traffic_manager.distance_to_leading_vehicle(actor, 5)
+        # x = 84
+        # y = -90
+        # for _ in range(self.num_veh):
+        #     y -= 10
+        #     adversary_transform = carla.Transform(carla.Location(x=84, y=y, z=10), carla.Rotation(yaw=270))
+        #     actor = self.world.try_spawn_actor(adversary_bp, adversary_transform)
+        #     self.target_vehicles.append(actor)
+        #     time.sleep(0.1)
+        #     actor.apply_control(carla.VehicleControl(throttle=0, steer=0, brake=1))
+        #     actor.set_autopilot(True, tm_port)
+        #     traffic_manager.ignore_lights_percentage(actor, 100)
+        #     traffic_manager.distance_to_leading_vehicle(actor, 5)
 
         y = -134
         x = 75
         for _ in range(self.num_veh):
             x = x - 15
-            adversary_transform = carla.Transform(carla.Location(x=x, y=y, z=8), carla.Rotation(yaw=0))
+            adversary_transform = carla.Transform(carla.Location(x=x, y=y, z=10), carla.Rotation(yaw=0))
             actor = self.world.try_spawn_actor(adversary_bp, adversary_transform)
             self.target_vehicles.append(actor)
             time.sleep(0.1)
@@ -635,6 +640,7 @@ class CarlaEnv(gym.Env):
 
 
 if __name__ == "__main__":
+    import datetime
     import yaml
     import pygame
 
@@ -647,13 +653,15 @@ if __name__ == "__main__":
     cfg = yaml.safe_load(open("config.yaml", "r"))
     env = CarlaEnv(cfg=cfg)
     obs = env.reset()
-    
+    start = datetime.datetime.now()
+
     try:
         while True:
             obs, reward, done, info = env.step(np.array([1.0], dtype=np.float32))
             if done:
-                print("Reward: ", reward)
                 obs = env.reset()
+                print("Reward: ", reward)
+                print("Time Elapsed:", datetime.datetime.now() - start)
             
             env.display(display=display)
             pygame.display.flip()
