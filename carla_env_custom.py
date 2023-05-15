@@ -8,7 +8,7 @@ import time
 import sys
 from typing import Dict
 
-sys.path.append("/home/docker/repos/test_env/carla-0.9.10-py3.7-linux-x86_64.egg")
+sys.path.append("../carla-0.9.10-py3.7-linux-x86_64.egg")
 import carla
 import gymnasium as gym
 import numpy as np
@@ -27,9 +27,10 @@ from local_carla_agents.navigation.global_route_planner import GlobalRoutePlanne
 class CarlaEnv(gym.Env):
     """An OpenAI gym wrapper for CARLA simulator."""
 
-    def __init__(self, cfg: Dict, host: str):
+    def __init__(self, cfg: Dict, host: str, tm_port: int = 8000):
         for k, v in cfg["env"].items():
             setattr(self, k, v)
+        self.tm_port = tm_port
         host_num = host.split("_")[-1]
         exp_name = cfg["exp_name"]
         outdir = cfg["output_dir"]
@@ -40,7 +41,7 @@ class CarlaEnv(gym.Env):
         # self.action_space = spaces.Box(np.array([-2.0, -2.0]), np.array([2.0, 2.0]), dtype=np.float32)
         self.action_space = spaces.Box(low=0, high=1.0, shape=(1,), dtype=np.float32)
         num_vehicles = 1 + 3 * self.num_veh
-        num_pedestrians = 2*self.num_ped
+        num_pedestrians = 4 * self.num_ped
         self.observation_space = spaces.Box(low=-50.0, high=50.0, shape=(8 + 3*num_vehicles + 3*num_pedestrians, ), dtype=np.float32)
 
         # Connect to carla server and get world object
@@ -55,7 +56,7 @@ class CarlaEnv(gym.Env):
 
         # Add Top down Camera sensor
         self.camera_img = np.zeros((self.CAM_RES, self.CAM_RES, 3), dtype=np.uint8)
-        self.camera_trans = carla.Transform(carla.Location(x=0.8, z=25), carla.Rotation(pitch=-90))
+        self.camera_trans = carla.Transform(carla.Location(x=0.8, z=50), carla.Rotation(pitch=-90))
         self.camera_bp = self.world.get_blueprint_library().find("sensor.camera.rgb")
         # Modify the attributes of the blueprint to set image resolution and field of view.
         self.camera_bp.set_attribute("image_size_x", str(self.CAM_RES))
@@ -439,21 +440,10 @@ class CarlaEnv(gym.Env):
         self.target_vehicles = []
         self.peds = []
         assert(self.num_veh <= 3)
-        assert(self.num_ped <= 2)
+        # assert(self.num_ped <= 2)
         self._spawn_surrounding_close_proximity_vehicles()
         # Spawn pedestrians
-        if self.num_ped > 0:
-            x = 92.7
-            for _ in range(self.num_ped):
-                pedestrian = self._try_spawn_random_walker_at(carla.Transform(carla.Location(x=x, y=-144, z=10), carla.Rotation(yaw=180)))
-                x += 1
-                self.peds.append(pedestrian)
-        if self.num_ped > 1:
-            x = 74.6
-            for _ in range(self.num_ped):
-                self._try_spawn_random_walker_at(carla.Transform(carla.Location(x=x, y=-144, z=10), carla.Rotation(yaw=90)))
-                x += 1
-                self.peds.append(pedestrian)
+        self._spawn_surrounding_pedestrians()
 
         if self._try_spawn_ego_vehicle_at(self.start) is False:
             raise Exception("Error: Cannot spawn ego vehicle")
@@ -497,33 +487,55 @@ class CarlaEnv(gym.Env):
 
         return self._get_obs(), copy.deepcopy(self.state_info)
 
+    def _spawn_surrounding_pedestrians(self):
+        x = 92.7
+        for _ in range(self.num_ped):
+            pedestrian = self._try_spawn_random_walker_at(carla.Transform(carla.Location(x=x, y=-144, z=10), carla.Rotation(yaw=random.randint(0, 360))))
+            x += 1
+            self.peds.append(pedestrian)
+        x = 74.6
+        for _ in range(self.num_ped):
+            self._try_spawn_random_walker_at(carla.Transform(carla.Location(x=x, y=-144, z=10), carla.Rotation(yaw=random.randint(0, 360))))
+            x += 1
+            self.peds.append(pedestrian)
+        x = 92.7
+        for _ in range(self.num_ped):
+            pedestrian = self._try_spawn_random_walker_at(carla.Transform(carla.Location(x=x, y=-125, z=10), carla.Rotation(yaw=random.randint(0, 360))))
+            x += 1
+            self.peds.append(pedestrian)
+        x = 74.6
+        for _ in range(self.num_ped):
+            pedestrian = self._try_spawn_random_walker_at(carla.Transform(carla.Location(x=x, y=-125, z=10), carla.Rotation(yaw=random.randint(0, 360))))
+            x += 1
+            self.peds.append(pedestrian)
+
     def _spawn_surrounding_close_proximity_vehicles(self):
 
         adversary_bp = self._create_vehicle_bluepprint("vehicle.tesla.model3")
-        traffic_manager = self.client.get_trafficmanager(8000)
-        tm_port = traffic_manager.get_port()
+
+        traffic_manager = self.client.get_trafficmanager(self.tm_port)
         traffic_manager.global_percentage_speed_difference(10)
 
         # Vehicle in same lane as ego vehicle
-        adversary_transform = carla.Transform(carla.Location(x=84, y=-100, z=10), carla.Rotation(yaw=270))
+        adversary_transform = carla.Transform(carla.Location(x=84, y=-100 + random.randint(-10, 10), z=10), carla.Rotation(yaw=270))
         actor = self.world.try_spawn_actor(adversary_bp, adversary_transform)
         self.target_vehicles.append(actor)
         time.sleep(0.1)
         actor.apply_control(carla.VehicleControl(throttle=0, steer=0, brake=1))
-        actor.set_autopilot(True, tm_port)
+        actor.set_autopilot(True, self.tm_port)
         traffic_manager.ignore_lights_percentage(actor, 100)
         traffic_manager.distance_to_leading_vehicle(actor, 5)
 
-        y = -134
+        y = -133.6
         x = 75
         for _ in range(self.num_veh):
             x = x - 15
-            adversary_transform = carla.Transform(carla.Location(x=x, y=y, z=8), carla.Rotation(yaw=0))
+            adversary_transform = carla.Transform(carla.Location(x=x + random.randint(-5, 5), y=y, z=8), carla.Rotation(yaw=0))
             actor = self.world.try_spawn_actor(adversary_bp, adversary_transform)
             self.target_vehicles.append(actor)
             time.sleep(0.1)
             actor.apply_control(carla.VehicleControl(throttle=0, steer=0, brake=1))
-            actor.set_autopilot(True, tm_port)
+            actor.set_autopilot(True, self.tm_port)
             traffic_manager.ignore_lights_percentage(actor, 100)
             traffic_manager.distance_to_leading_vehicle(actor, 5)
             # traffic_manager.set_route(actor, route)
@@ -531,12 +543,12 @@ class CarlaEnv(gym.Env):
         x = 90
         for _ in range(self.num_veh):
             x = x + 15
-            adversary_transform = carla.Transform(carla.Location(x=x, y=y, z=10), carla.Rotation(yaw=180))
+            adversary_transform = carla.Transform(carla.Location(x=x + random.randint(-5, 5), y=y, z=10), carla.Rotation(yaw=180))
             actor = self.world.try_spawn_actor(adversary_bp, adversary_transform)
             self.target_vehicles.append(actor)
             time.sleep(0.1)
             actor.apply_control(carla.VehicleControl(throttle=0, steer=0, brake=1))
-            actor.set_autopilot(True, tm_port)
+            actor.set_autopilot(True, self.tm_port)
             traffic_manager.ignore_lights_percentage(actor, 100)
             traffic_manager.distance_to_leading_vehicle(actor, 5)
             # traffic_manager.set_route(actor, route)
@@ -545,12 +557,12 @@ class CarlaEnv(gym.Env):
         y= -135
         for _ in range(self.num_veh):
             y = y - 15
-            adversary_transform = carla.Transform(carla.Location(x=x, y=y, z=10), carla.Rotation(yaw=90))
+            adversary_transform = carla.Transform(carla.Location(x=x, y=y + random.randint(-5, 5), z=10), carla.Rotation(yaw=90))
             actor = self.world.try_spawn_actor(adversary_bp, adversary_transform)
             self.target_vehicles.append(actor)
             time.sleep(0.1)
             actor.apply_control(carla.VehicleControl(throttle=0, steer=0, brake=1))
-            actor.set_autopilot(True, tm_port)
+            actor.set_autopilot(True, self.tm_port)
             traffic_manager.ignore_lights_percentage(actor, 100)
             traffic_manager.distance_to_leading_vehicle(actor, 5)
     
@@ -642,12 +654,12 @@ if __name__ == "__main__":
     pygame.HWSURFACE | pygame.DOUBLEBUF)
 
     cfg = yaml.safe_load(open("config.yaml", "r"))
-    env = CarlaEnv(cfg=cfg)
+    env = CarlaEnv(cfg=cfg, host="intersection-driving-carla_server_high-2", tm_port=8010)
     obs, info = env.reset()
     
     try:
         while True:
-            obs, reward, done, info = env.step(np.array([1.0], dtype=np.float32))
+            obs, reward, done, done, info = env.step(np.array([1.0], dtype=np.float32))
             if done:
                 obs, info = env.reset()
             
