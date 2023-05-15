@@ -229,8 +229,7 @@ class CarlaEnv(gym.Env):
             self.isSpecialSpeed = True
             return True
         elif v_norm > (5 * self.desired_speed):
-            self.logger.debug(
-                "Speed too fast!")
+            self.logger.debug("Speed too fast!")
             self.isSpecialSpeed = True
             return True
 
@@ -353,37 +352,6 @@ class CarlaEnv(gym.Env):
                 min_wp = wp
                 index = i
         return min_wp[0], float(index) / len(self.waypoints)
-
-    def _get_future_wpt_angle(self, distances):
-        """
-        Get next wpts in distances
-        params:
-            distances: list of int/float, the dist of wpt which user wants to get
-        return:
-            future_angles: np.array, <current_wpt, wpt(dist_i)> correspond to the dist in distances
-        """
-        angles = []
-        current_wpt, _ = self._get_waypoint(location=self.ego.get_location())
-        if not current_wpt:
-            self.logger.error("Fail to find a waypoint")
-            current_road_heading = self.current_wpt[3]
-        else:
-            current_road_heading = current_wpt.transform.rotation.yaw
-
-        for d in distances:
-            wpts = current_wpt.next(d)
-            # if len(wpts) > 1:
-            #     wpt = [w for w in wpts if w.road_id == 744][0]
-            # else:
-            #     wpt = wpts[0]
-            wpt = wpts[0]
-            # self.world.debug.draw_point(wpt.transform.location, life_time=1, color=carla.Color(r=0,b=255,g=0))
-            wpt_heading = wpt.transform.rotation.yaw
-            delta_heading = delta_angle_between(current_road_heading,
-                                                wpt_heading)
-            angles.append(delta_heading)
-
-        return np.array(angles, dtype=np.float32)
 
     def _info2normalized_state_vector(self):
         """
