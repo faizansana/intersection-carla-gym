@@ -4,8 +4,8 @@ from __future__ import division
 
 import copy
 import random
-import time
 import sys
+import time
 from typing import Dict
 
 sys.path.append("../carla-0.9.10-py3.7-linux-x86_64.egg")
@@ -18,10 +18,9 @@ from gymnasium import spaces
 
 import util.carla_logger as carla_logger
 import util.misc as helper
-from util.route_planner import RoutePlanner
-from local_carla_agents.navigation.local_planner import LocalPlanner
-from local_carla_agents.navigation.global_route_planner_dao import GlobalRoutePlannerDAO
 from local_carla_agents.navigation.global_route_planner import GlobalRoutePlanner
+from local_carla_agents.navigation.global_route_planner_dao import GlobalRoutePlannerDAO
+from local_carla_agents.navigation.local_planner import LocalPlanner
 
 
 class CarlaEnv(gym.Env):
@@ -93,7 +92,6 @@ class CarlaEnv(gym.Env):
         self.dest = carla.Transform(carla.Location(x=49, y=-137), carla.Rotation())
         self.waypoints = global_planner.trace_route(self.start.location, self.dest.location)
 
-
     def _populate_state_info(self):
         ego_x, ego_y = self._get_ego_pos()
         self.current_wpt, progress = self._get_waypoint_xyz()
@@ -129,8 +127,8 @@ class CarlaEnv(gym.Env):
         self.state_info["dyaw_dt_t"] = dyaw_dt
 
         self.state_info["lateral_dist_t"] = np.linalg.norm(pos_err_vec) * \
-                                            np.sign(pos_err_vec[0] * road_heading[1] - \
-                                                    pos_err_vec[1] * road_heading[0])
+            np.sign(pos_err_vec[0] * road_heading[1] -
+                    pos_err_vec[1] * road_heading[0])
         self.state_info["action_t_1"] = self.last_action
         # self.state_info["angles_t"] = future_angles
         self.state_info["progress"] = progress
@@ -163,9 +161,9 @@ class CarlaEnv(gym.Env):
         return pygame.surfarray.make_surface(array.swapaxes(0, 1))
 
     def _create_vehicle_bluepprint(self,
-                                   actor_filter,
+                                   actor_filter: str,
                                    color=None,
-                                   number_of_wheels=[4]):
+                                   number_of_wheels: list = [4]):
         """Create the blueprint for a specific actor type.
 
         Args:
@@ -363,11 +361,9 @@ class CarlaEnv(gym.Env):
         """
         velocity_t = self.state_info["velocity_t"] / (self.desired_speed * 1.5)
         accel_t = self.state_info["acceleration_t"] / 40
-        delta_yaw_t = np.array(self.state_info["delta_yaw_t"]).reshape(
-            (1, )) / 180
+        delta_yaw_t = np.array(self.state_info["delta_yaw_t"]).reshape((1, )) / 180
         dyaw_dt_t = np.array(self.state_info["dyaw_dt_t"]).reshape((1, )) / 30.0
-        lateral_dist_t = self.state_info["lateral_dist_t"].reshape(
-            (1, )) / 5      
+        lateral_dist_t = self.state_info["lateral_dist_t"].reshape((1, )) / 5
         action_last = self.state_info["action_t_1"] / 3
 
         # future_angles = self.state_info["angles_t"] / 90
@@ -378,7 +374,6 @@ class CarlaEnv(gym.Env):
         ped_dist_x = np.array(self.state_info["peds_dist_x"]).reshape((len(self.state_info["peds_dist_y"]), )) / 30
         ped_vel = np.array(self.state_info["peds_vel"]).reshape((len(self.state_info["peds_dist_y"]), )) / 7
 
-        
         info_vec = np.concatenate([
             velocity_t, accel_t, delta_yaw_t, dyaw_dt_t, lateral_dist_t,
             action_last, target_dist_y, target_dist_x, target_vel, ped_dist_y, ped_dist_x, ped_vel
@@ -386,7 +381,7 @@ class CarlaEnv(gym.Env):
         info_vec = info_vec.squeeze()
 
         return info_vec
-    
+
     def _transform(self, x, y, yaw):
         veh1_t = carla.Transform()
         veh1_t.location.x = x
@@ -407,7 +402,7 @@ class CarlaEnv(gym.Env):
 
         self.target_vehicles = []
         self.peds = []
-        assert(self.num_veh <= 3)
+        assert (self.num_veh <= 3)
         # assert(self.num_ped <= 2)
         self._spawn_surrounding_close_proximity_vehicles()
         # Spawn pedestrians
@@ -420,11 +415,11 @@ class CarlaEnv(gym.Env):
         self.routeplanner = LocalPlanner(self.ego)
         self.routeplanner.set_global_plan(self.waypoints)
         # self.waypoints, _, _ = self.routeplanner.run_step()
-        
+
         # Add collision sensor
         self.ego_collision_sensor = self.world.spawn_actor(self.collision_bp, carla.Transform(), attach_to=self.ego)
         self.ego_collision_sensor.listen(lambda event: collision_event(event))
-        
+
         def collision_event(event):
             self.collision_occured = True
 
@@ -520,9 +515,9 @@ class CarlaEnv(gym.Env):
             traffic_manager.ignore_lights_percentage(actor, 100)
             traffic_manager.distance_to_leading_vehicle(actor, 5)
             # traffic_manager.set_route(actor, route)
-        
+
         x = 82.5
-        y= -135
+        y = -135
         for _ in range(self.num_veh):
             y = y - 15
             adversary_transform = carla.Transform(carla.Location(x=x, y=y + random.randint(-5, 5), z=10), carla.Rotation(yaw=90))
@@ -533,7 +528,7 @@ class CarlaEnv(gym.Env):
             actor.set_autopilot(True, self.tm_port)
             traffic_manager.ignore_lights_percentage(actor, 100)
             traffic_manager.distance_to_leading_vehicle(actor, 5)
-    
+
     def _try_spawn_random_walker_at(self, transform):
         """Try to spawn a walker at specific transform with random bluprint.
 
@@ -560,7 +555,7 @@ class CarlaEnv(gym.Env):
             walker_controller_actor.set_max_speed(1 + random.random())    # max speed between 1 and 2 (default is 1.4 m/s)
             return walker_actor
         return None
-    
+
     def step(self, action: np.ndarray):
         current_action = action + self.last_action
         # Map action to [0, self.desired_speed]
@@ -601,7 +596,7 @@ class CarlaEnv(gym.Env):
                     if actor.type_id == 'controller.ai.walker':
                         actor.stop()
                     actor.destroy()
-    
+
     def _set_synchronous_mode(self, synchronous=True):
         """Set whether to use the synchronous mode.
         """
@@ -618,19 +613,19 @@ if __name__ == "__main__":
     # Make pygame display
     pygame.init()
     display = pygame.display.set_mode(
-    (1024, 1024),
-    pygame.HWSURFACE | pygame.DOUBLEBUF)
+        (1024, 1024),
+        pygame.HWSURFACE | pygame.DOUBLEBUF)
 
     cfg = yaml.safe_load(open("config.yaml", "r"))
     env = CarlaEnv(cfg=cfg, host="intersection-driving-carla_server_high-2", tm_port=8010)
     obs, info = env.reset()
-    
+
     try:
         while True:
             obs, reward, done, done, info = env.step(np.array([1.0], dtype=np.float32))
             if done:
                 obs, info = env.reset()
-            
+
             env.display(display=display)
             pygame.display.flip()
     except KeyboardInterrupt:
