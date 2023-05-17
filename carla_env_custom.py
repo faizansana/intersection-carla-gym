@@ -39,7 +39,7 @@ class CarlaEnv(gym.Env):
         # action and observation space
         # self.action_space = spaces.Box(np.array([-2.0, -2.0]), np.array([2.0, 2.0]), dtype=np.float32)
         self.action_space = spaces.Box(low=0, high=1.0, shape=(1,), dtype=np.float32)
-        num_vehicles = 1 + 3 * self.num_veh
+        num_vehicles = 3 * self.num_veh
         num_pedestrians = 4 * self.num_ped
         self.observation_space = spaces.Box(low=-50.0, high=50.0, shape=(8 + 3*num_vehicles + 3*num_pedestrians, ), dtype=np.float32)
 
@@ -485,10 +485,10 @@ class CarlaEnv(gym.Env):
         adversary_bp = self._create_vehicle_bluepprint("vehicle.tesla.model3")
 
         # Vehicle in same lane as ego vehicle
-        adversary_transform = carla.Transform(carla.Location(x=84, y=-100 + random.randint(-10, 10), z=10), carla.Rotation(yaw=270))
-        actor = self.world.try_spawn_actor(adversary_bp, adversary_transform)
-        self.target_vehicles.append(actor)
-        actor.apply_control(carla.VehicleControl(throttle=0, steer=0, brake=1))
+        # adversary_transform = carla.Transform(carla.Location(x=84, y=-100 + random.randint(-10, 10), z=10), carla.Rotation(yaw=270))
+        # actor = self.world.try_spawn_actor(adversary_bp, adversary_transform)
+        # self.target_vehicles.append(actor)
+        # actor.apply_control(carla.VehicleControl(throttle=0, steer=0, brake=1))
 
         y = -133.6
         x = 75
