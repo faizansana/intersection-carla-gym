@@ -19,7 +19,8 @@ env:
     # Route completion reward
     c_completion: 100.0
     # Route non-completion penalty (for any reason: crash, too many steps)
-    c_terminal: -10.0
+    c_terminal_timeout: -10.0
+    c_terminal_collision: -100.0
 
     # Velocity reward constants
     c_v_eff_under_limit: 1.0
