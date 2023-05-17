@@ -263,8 +263,10 @@ class CarlaEnv(gym.Env):
         """
         weights = self.reward_weights
 
-        if self.isCollided or self.isTimeOut:
-            return weights["c_terminal"]
+        if self.isCollided:
+            return weights["c_terminal_collision"]
+        if self.isTimeOut:
+            return weights["c_terminal_timeout"]
         if self.isSuccess:
             return weights["c_completion"]
 
@@ -544,7 +546,7 @@ class CarlaEnv(gym.Env):
         return None
 
     def step(self, action: np.ndarray):
-        current_action = action + self.last_action
+        current_action = action
         # Map action to [0, self.desired_speed]
         speed_in_vms = current_action * self.desired_speed
         # Convert m/s to km/h since the planner takes km/h as input
