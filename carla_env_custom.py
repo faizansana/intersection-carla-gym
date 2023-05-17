@@ -10,11 +10,11 @@ from typing import Dict
 
 sys.path.append("../carla-0.9.10-py3.7-linux-x86_64.egg")
 import carla
-import gymnasium as gym
+import gym
 import numpy as np
 import pygame
 from carla import ColorConverter as cc
-from gymnasium import spaces
+from gym import spaces
 
 import util.carla_logger as carla_logger
 import util.misc as helper
@@ -448,7 +448,7 @@ class CarlaEnv(gym.Env):
         self.isOutOfLane = False
         self.isSpecialSpeed = False
 
-        return self._get_obs(), copy.deepcopy(self.state_info)
+        return self._get_obs()
 
     def _spawn_surrounding_pedestrians(self):
         x = 92.7
@@ -580,7 +580,7 @@ class CarlaEnv(gym.Env):
         isDone = self._terminal()
         current_reward = self._get_reward(np.array(current_action))
 
-        return (self._get_obs(), current_reward, isDone, isDone, copy.deepcopy(self.state_info))
+        return (self._get_obs(), current_reward, isDone, copy.deepcopy(self.state_info))
 
     def display(self, display):
         if not self.og_camera_img:
