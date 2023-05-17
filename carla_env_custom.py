@@ -39,7 +39,7 @@ class CarlaEnv(gym.Env):
         # action and observation space
         # self.action_space = spaces.Box(np.array([-2.0, -2.0]), np.array([2.0, 2.0]), dtype=np.float32)
         self.action_space = spaces.Box(low=0, high=1.0, shape=(1,), dtype=np.float32)
-        num_vehicles = 1 + 3 * self.num_veh
+        num_vehicles = 3 * self.num_veh
         num_pedestrians = 4 * self.num_ped
         self.observation_space = spaces.Box(low=-50.0, high=50.0, shape=(8 + 3*num_vehicles + 3*num_pedestrians, ), dtype=np.float32)
 
@@ -64,9 +64,6 @@ class CarlaEnv(gym.Env):
         # Set the time in seconds between sensor captures
         self.camera_bp.set_attribute("sensor_tick", "0.02")
 
-        # Set fixed simulation step for synchronous mode
-        self.settings = self.world.get_settings()
-
         # Record the time of total steps and resetting steps
         self.total_step = 0
 
@@ -88,7 +85,7 @@ class CarlaEnv(gym.Env):
         global_planner = GlobalRoutePlanner(global_planner_dao)
         global_planner.setup()
         # Start and Destination
-        self.start = carla.Transform(carla.Location(x=84, y=-90, z=10), carla.Rotation(yaw=270))
+        self.start = carla.Transform(carla.Location(x=84, y=-110, z=10), carla.Rotation(yaw=270))
         self.dest = carla.Transform(carla.Location(x=49, y=-137), carla.Rotation())
         self.waypoints = global_planner.trace_route(self.start.location, self.dest.location)
 
@@ -395,21 +392,21 @@ class CarlaEnv(gym.Env):
         self.camera_sensor = None
         self.collision_occured = False
 
+        self._set_synchronous_mode(False)
         # Delete sensors, vehicles and walkers
         self._clear_all_actors(['sensor.other.collision', 'sensor.camera.rgb', 'vehicle.*', 'controller.ai.walker', 'walker.*'])
 
-        self._set_synchronous_mode(False)
 
         self.target_vehicles = []
         self.peds = []
         assert (self.num_veh <= 3)
         # assert(self.num_ped <= 2)
+        if self._try_spawn_ego_vehicle_at(self.start) is False:
+            raise Exception("Error: Cannot spawn ego vehicle")
         self._spawn_surrounding_close_proximity_vehicles()
         # Spawn pedestrians
         self._spawn_surrounding_pedestrians()
 
-        if self._try_spawn_ego_vehicle_at(self.start) is False:
-            raise Exception("Error: Cannot spawn ego vehicle")
 
         # self.routeplanner = RoutePlanner(self.ego, self.max_waypt)
         self.routeplanner = LocalPlanner(self.ego)
@@ -434,6 +431,8 @@ class CarlaEnv(gym.Env):
 
         # Enable sync mode
         self._set_synchronous_mode(True)
+
+        self._enable_adv_vehicles_autopilot_mode()
 
         # Reset action of last time step
         # TODO:[another kind of action]
@@ -472,22 +471,24 @@ class CarlaEnv(gym.Env):
             x += 1
             self.peds.append(pedestrian)
 
+    def _enable_adv_vehicles_autopilot_mode(self):
+        traffic_manager = self.client.get_trafficmanager(self.tm_port)
+        traffic_manager.global_percentage_speed_difference(10)
+
+        for vehicle in self.target_vehicles:
+            vehicle.set_autopilot(True, self.tm_port)
+            traffic_manager.ignore_lights_percentage(vehicle, 100)
+            traffic_manager.distance_to_leading_vehicle(vehicle, 5)
+
     def _spawn_surrounding_close_proximity_vehicles(self):
 
         adversary_bp = self._create_vehicle_bluepprint("vehicle.tesla.model3")
 
-        traffic_manager = self.client.get_trafficmanager(self.tm_port)
-        traffic_manager.global_percentage_speed_difference(10)
-
         # Vehicle in same lane as ego vehicle
-        adversary_transform = carla.Transform(carla.Location(x=84, y=-100 + random.randint(-10, 10), z=10), carla.Rotation(yaw=270))
-        actor = self.world.try_spawn_actor(adversary_bp, adversary_transform)
-        self.target_vehicles.append(actor)
-        time.sleep(0.1)
-        actor.apply_control(carla.VehicleControl(throttle=0, steer=0, brake=1))
-        actor.set_autopilot(True, self.tm_port)
-        traffic_manager.ignore_lights_percentage(actor, 100)
-        traffic_manager.distance_to_leading_vehicle(actor, 5)
+        # adversary_transform = carla.Transform(carla.Location(x=84, y=-100 + random.randint(-10, 10), z=10), carla.Rotation(yaw=270))
+        # actor = self.world.try_spawn_actor(adversary_bp, adversary_transform)
+        # self.target_vehicles.append(actor)
+        # actor.apply_control(carla.VehicleControl(throttle=0, steer=0, brake=1))
 
         y = -133.6
         x = 75
@@ -496,12 +497,7 @@ class CarlaEnv(gym.Env):
             adversary_transform = carla.Transform(carla.Location(x=x + random.randint(-5, 5), y=y, z=8), carla.Rotation(yaw=0))
             actor = self.world.try_spawn_actor(adversary_bp, adversary_transform)
             self.target_vehicles.append(actor)
-            time.sleep(0.1)
             actor.apply_control(carla.VehicleControl(throttle=0, steer=0, brake=1))
-            actor.set_autopilot(True, self.tm_port)
-            traffic_manager.ignore_lights_percentage(actor, 100)
-            traffic_manager.distance_to_leading_vehicle(actor, 5)
-            # traffic_manager.set_route(actor, route)
         y = -135.5
         x = 90
         for _ in range(self.num_veh):
@@ -509,12 +505,7 @@ class CarlaEnv(gym.Env):
             adversary_transform = carla.Transform(carla.Location(x=x + random.randint(-5, 5), y=y, z=10), carla.Rotation(yaw=180))
             actor = self.world.try_spawn_actor(adversary_bp, adversary_transform)
             self.target_vehicles.append(actor)
-            time.sleep(0.1)
             actor.apply_control(carla.VehicleControl(throttle=0, steer=0, brake=1))
-            actor.set_autopilot(True, self.tm_port)
-            traffic_manager.ignore_lights_percentage(actor, 100)
-            traffic_manager.distance_to_leading_vehicle(actor, 5)
-            # traffic_manager.set_route(actor, route)
 
         x = 82.5
         y = -135
@@ -523,11 +514,7 @@ class CarlaEnv(gym.Env):
             adversary_transform = carla.Transform(carla.Location(x=x, y=y + random.randint(-5, 5), z=10), carla.Rotation(yaw=90))
             actor = self.world.try_spawn_actor(adversary_bp, adversary_transform)
             self.target_vehicles.append(actor)
-            time.sleep(0.1)
             actor.apply_control(carla.VehicleControl(throttle=0, steer=0, brake=1))
-            actor.set_autopilot(True, self.tm_port)
-            traffic_manager.ignore_lights_percentage(actor, 100)
-            traffic_manager.distance_to_leading_vehicle(actor, 5)
 
     def _try_spawn_random_walker_at(self, transform):
         """Try to spawn a walker at specific transform with random bluprint.
