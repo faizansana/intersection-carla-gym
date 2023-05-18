@@ -89,6 +89,10 @@ class CarlaEnv(gym.Env):
         self.dest = carla.Transform(carla.Location(x=49, y=-137), carla.Rotation())
         self.waypoints = global_planner.trace_route(self.start.location, self.dest.location)
 
+        # Setup info variables
+        self.isCollided = False
+        self.isSuccess = False
+
     def _populate_state_info(self):
         ego_x, ego_y = self._get_ego_pos()
         self.current_wpt, progress = self._get_waypoint_xyz()
@@ -116,6 +120,9 @@ class CarlaEnv(gym.Env):
 
         pos_err_vec = np.array((ego_x, ego_y)) - self.current_wpt[0:2]
 
+        self.state_info["collision"] = self.isCollided
+        self.state_info["success"] = self.isSuccess
+        
         self.state_info["velocity_t"] = v_t
         self.state_info["acceleration_t"] = a_t
 
@@ -558,8 +565,6 @@ class CarlaEnv(gym.Env):
 
         self.world.tick()
 
-        self._populate_state_info()
-
         # Update timesteps
         self.time_step += 1
         self.total_step += 1
@@ -568,6 +573,8 @@ class CarlaEnv(gym.Env):
         # calculate reward
         isDone = self._terminal()
         current_reward = self._get_reward(np.array(current_action))
+        
+        self._populate_state_info()
 
         return (self._get_obs(), current_reward, isDone, isDone, copy.deepcopy(self.state_info))
 
