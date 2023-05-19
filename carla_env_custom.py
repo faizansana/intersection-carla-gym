@@ -43,6 +43,7 @@ class CarlaEnv(gym.Env):
         outdir = cfg["output_dir"]
         self.logger = carla_logger.setup_carla_logger(output_dir=outdir, exp_name=exp_name, rank=host_num)
         self.logger.info(f"Env running on server {host}")
+        self._normalize_reward_weights()
 
         # action and observation space
         if self.continuous:
@@ -104,6 +105,20 @@ class CarlaEnv(gym.Env):
         self.isCollided = False
         self.isSuccess = False
 
+    def _normalize_reward_weights(self):
+        # Find the max negative reward in the reward weights
+        max_neg_reward = abs(min(v for k, v in self.reward_weights.items() if v < 0))
+
+        # Find max positive reward in reward weights
+        max_pos_reward = max([v for k, v in self.reward_weights.items() if v > 0])
+
+        # Normalize the reward weights
+        for k, v in self.reward_weights.items():
+            if v < 0:
+                self.reward_weights[k] = v / max_neg_reward
+            else:
+                self.reward_weights[k] = v / max_pos_reward
+
     def _populate_state_info(self):
         ego_x, ego_y = self._get_ego_pos()
         self.current_wpt, progress = self._get_waypoint_xyz()
@@ -131,6 +146,7 @@ class CarlaEnv(gym.Env):
 
         pos_err_vec = np.array((ego_x, ego_y)) - self.current_wpt[0:2]
 
+        self.state_info["pedestrian_collision"] = self.pedestrian_collision
         self.state_info["collision"] = self.isCollided
         self.state_info["success"] = self.isSuccess
 
@@ -281,6 +297,8 @@ class CarlaEnv(gym.Env):
         """
         weights = self.reward_weights
 
+        if self.pedestrian_collision:
+            return weights["c_terminal_pedestrian_collision"]
         if self.isCollided:
             return weights["c_terminal_collision"]
         if self.isTimeOut:
@@ -414,6 +432,7 @@ class CarlaEnv(gym.Env):
         self.ego_collision_sensor = None
         self.camera_sensor = None
         self.collision_occured = False
+        self.pedestrian_collision = False
 
         self._set_synchronous_mode(False)
         # Delete sensors, vehicles and walkers
@@ -440,6 +459,8 @@ class CarlaEnv(gym.Env):
 
         def collision_event(event):
             self.collision_occured = True
+            if event.other_actor.type_id.startswith("walker"):
+                self.pedestrian_collision = True
 
         self.camera_sensor = self.world.spawn_actor(self.camera_bp, self.camera_trans, attach_to=self.ego)
         self.camera_sensor.listen(lambda data: get_camera_img(data))
