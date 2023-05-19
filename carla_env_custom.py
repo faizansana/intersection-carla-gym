@@ -6,7 +6,7 @@ import copy
 import random
 import sys
 import time
-from typing import Dict
+from typing import Dict, Union
 
 sys.path.append("../carla-0.9.10-py3.7-linux-x86_64.egg")
 import carla
@@ -26,6 +26,14 @@ from local_carla_agents.navigation.local_planner import LocalPlanner
 class CarlaEnv(gym.Env):
     """An OpenAI gym wrapper for CARLA simulator."""
 
+    ACTIONS: Dict[int, str] = {
+        0: "SLOWER",
+        1: "IDLE",
+        2: "FASTER"
+    }
+
+    ACTIONS_INDEXES = {v: k for k, v in ACTIONS.items()}
+
     def __init__(self, cfg: Dict, host: str, tm_port: int = 8000):
         for k, v in cfg["env"].items():
             setattr(self, k, v)
@@ -37,11 +45,14 @@ class CarlaEnv(gym.Env):
         self.logger.info(f"Env running on server {host}")
 
         # action and observation space
-        # self.action_space = spaces.Box(np.array([-2.0, -2.0]), np.array([2.0, 2.0]), dtype=np.float32)
-        self.action_space = spaces.Box(low=0, high=1.0, shape=(1,), dtype=np.float32)
+        if self.continuous:
+            self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(1,), dtype=np.float32)
+        else:
+            self.action_space = spaces.Discrete(3)
+            self.speed_index = 0
         num_vehicles = 3 * self.num_veh
         num_pedestrians = 4 * self.num_ped
-        self.observation_space = spaces.Box(low=-50.0, high=50.0, shape=(8 + 3*num_vehicles + 3*num_pedestrians, ), dtype=np.float32)
+        self.observation_space = spaces.Box(low=-50.0, high=50.0, shape=(7 + 3*num_vehicles + 3*num_pedestrians, ), dtype=np.float32)
 
         # Connect to carla server and get world object
         self._make_carla_client(host, self.port)
@@ -122,7 +133,7 @@ class CarlaEnv(gym.Env):
 
         self.state_info["collision"] = self.isCollided
         self.state_info["success"] = self.isSuccess
-        
+
         self.state_info["velocity_t"] = v_t
         self.state_info["acceleration_t"] = a_t
 
@@ -287,7 +298,10 @@ class CarlaEnv(gym.Env):
         delta_yaw, _, _ = self._get_delta_yaw()
         r_delta_yaw = weights["c_yaw_delta"] * delta_yaw
 
-        r_action_regularized = weights["c_action_reg"] * np.linalg.norm(action)**2
+        if self.continuous:
+            r_action_regularized = weights["c_action_reg"] * np.linalg.norm(action)**2
+        else:
+            r_action_regularized = 0
 
         lateral_dist = self.state_info["lateral_dist_t"]
         r_lateral = weights["c_lat_dev"] * abs(lateral_dist)
@@ -382,7 +396,7 @@ class CarlaEnv(gym.Env):
 
         info_vec = np.concatenate([
             velocity_t, accel_t, delta_yaw_t, dyaw_dt_t, lateral_dist_t,
-            action_last, target_dist_y, target_dist_x, target_vel, ped_dist_y, ped_dist_x, ped_vel
+            target_dist_y, target_dist_x, target_vel, ped_dist_y, ped_dist_x, ped_vel
         ], axis=0)
         info_vec = info_vec.squeeze()
 
@@ -405,7 +419,6 @@ class CarlaEnv(gym.Env):
         # Delete sensors, vehicles and walkers
         self._clear_all_actors(['sensor.other.collision', 'sensor.camera.rgb', 'vehicle.*', 'controller.ai.walker', 'walker.*'])
 
-
         self.target_vehicles = []
         self.peds = []
         assert (self.num_veh <= 3)
@@ -415,7 +428,6 @@ class CarlaEnv(gym.Env):
         self._spawn_surrounding_close_proximity_vehicles()
         # Spawn pedestrians
         self._spawn_surrounding_pedestrians()
-
 
         # self.routeplanner = RoutePlanner(self.ego, self.max_waypt)
         self.routeplanner = LocalPlanner(self.ego)
@@ -552,14 +564,30 @@ class CarlaEnv(gym.Env):
             return walker_actor
         return None
 
-    def step(self, action: np.ndarray):
-        current_action = action
-        # Map action to [0, self.desired_speed]
-        speed_in_vms = current_action * self.desired_speed
+    def _get_action_speed(self, action: Union[np.ndarray, int]) -> float:
+        """Map action to speed value in m/s."""
+        if self.continuous:
+            # Map action to [-self.desired_speed, self.desired_speed]
+            speed = action * self.desired_speed
+            return speed[0]
+        else:
+            if self.ACTIONS[action] == "SLOWER":
+                # Shift list to the left
+                self.speed_index = max(0, self.speed_index - 1)
+            elif self.ACTIONS[action] == "FASTER":
+                # Shift list to the right
+                self.speed_index = min(len(self.target_speeds) - 1, self.speed_index + 1)
+            elif self.ACTIONS[action] == "IDLE":
+                self.speed_index = self.speed_index
+
+            return self.target_speeds[self.speed_index]
+
+    def step(self, action: Union[np.ndarray, int]):
+        speed_in_vms = self._get_action_speed(action)
         # Convert m/s to km/h since the planner takes km/h as input
         speed_in_km_h = speed_in_vms * 3.6
 
-        self.routeplanner.set_speed(speed_in_km_h[0])
+        self.routeplanner.set_speed(speed_in_km_h)
         control = self.routeplanner.run_step(debug=True)
         self.ego.apply_control(control)
 
@@ -568,12 +596,12 @@ class CarlaEnv(gym.Env):
         # Update timesteps
         self.time_step += 1
         self.total_step += 1
-        self.last_action = current_action
+        self.last_action = action
 
         # calculate reward
         isDone = self._terminal()
-        current_reward = self._get_reward(np.array(current_action))
-        
+        current_reward = self._get_reward(np.array(action))
+
         self._populate_state_info()
 
         return (self._get_obs(), current_reward, isDone, isDone, copy.deepcopy(self.state_info))
