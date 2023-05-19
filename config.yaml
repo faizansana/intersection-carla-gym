@@ -4,12 +4,14 @@ env:
   # which environment to learn in
   #   either carla-v0 or carla_mpc-v0
   name: carla_mpc-v0
+  continuous: False
+  target_speeds: [0, 3, 6, 9, 12] # For discrete speed control
+  desired_speed: 12 # For continuous speed control
   dt: 0.05
   # Change this to match your server user
   port: 2000
   render: false
   ego_vehicle_filter: "vehicle.lincoln*"
-  desired_speed: 12
   num_veh: 3
   num_ped: 2
   max_steps: 500
@@ -18,9 +20,10 @@ env:
   reward_weights:
     # Route completion reward
     c_completion: 100.0
-    # Route non-completion penalty (for any reason: crash, too many steps)
-    c_terminal: -10.0
-
+    # Collision penalty
+    c_terminal_collision: -100.0
+    # Timeout penalty
+    c_terminal_timeout: -10.0
     # Velocity reward constants
     c_v_eff_under_limit: 1.0
     c_v_eff_over_limit: -2.0
