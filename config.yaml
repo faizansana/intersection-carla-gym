@@ -20,8 +20,10 @@ env:
   reward_weights:
     # Route completion reward
     c_completion: 100.0
-    # Collision penalty
+    # Collision penalty with vehicle
     c_terminal_collision: -100.0
+    # Collision penalty with pedestrian
+    c_terminal_pedestrian_collision: -200.0
     # Timeout penalty
     c_terminal_timeout: -10.0
     # Velocity reward constants
