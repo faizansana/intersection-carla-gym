@@ -1,10 +1,7 @@
 exp_name: "first_test"
 output_dir: "output"
 env:
-  # which environment to learn in
-  #   either carla-v0 or carla_mpc-v0
-  name: carla_mpc-v0
-  continuous: False
+  continuous: True
   target_speeds: [0, 3, 6, 9, 12] # For discrete speed control
   desired_speed: 12 # For continuous speed control
   dt: 0.05
