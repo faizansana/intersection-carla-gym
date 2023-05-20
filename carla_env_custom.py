@@ -6,7 +6,7 @@ import copy
 import random
 import sys
 import time
-from typing import Dict, Union
+from typing import Dict, Union, Tuple
 
 sys.path.append("../carla-0.9.10-py3.7-linux-x86_64.egg")
 import carla
@@ -105,6 +105,31 @@ class CarlaEnv(gym.Env):
         self.isCollided = False
         self.isSuccess = False
 
+    def _get_closest_pedestrian_distance(self):
+        closest_ped = self.peds[0]
+        closest_ped_dist = self._distance_between_actors(self.ego, closest_ped)
+
+        for ped in self.peds:
+            dist = self._distance_between_actors(self.ego, ped)
+            if dist < closest_ped_dist:
+                closest_ped_dist = dist
+                closest_ped = ped
+        return closest_ped_dist
+
+    def _distance_between_actors(self, first_actor: carla.Actor, second_actor: carla.Actor) -> float:
+        """Calculates euclidean distance between two actors.
+
+        Args:
+            first_actor (carla.Actor): Actor1
+            second_actor (carla.Actor): Actor2
+
+        Returns:
+            _type_: _description_
+        """
+        first_x, first_y = self._get_actor_pos(first_actor)
+        second_x, second_y = self._get_actor_pos(second_actor)
+        return np.sqrt((first_x - second_x)**2 + (first_y - second_y)**2)
+
     def _normalize_reward_weights(self):
         # Find the max negative reward in the reward weights
         max_neg_reward = abs(min(v for k, v in self.reward_weights.items() if v < 0))
@@ -112,15 +137,18 @@ class CarlaEnv(gym.Env):
         # Find max positive reward in reward weights
         max_pos_reward = max([v for k, v in self.reward_weights.items() if v > 0])
 
+        max_reward = max(max_neg_reward, max_pos_reward)
+
         # Normalize the reward weights
         for k, v in self.reward_weights.items():
-            if v < 0:
-                self.reward_weights[k] = v / max_neg_reward
-            else:
-                self.reward_weights[k] = v / max_pos_reward
+            self.reward_weights[k] = v / max_reward
+            # if v < 0:
+            #     self.reward_weights[k] = v / max_neg_reward
+            # else:
+            #     self.reward_weights[k] = v / max_pos_reward
 
     def _populate_state_info(self):
-        ego_x, ego_y = self._get_ego_pos()
+        ego_x, ego_y = self._get_actor_pos(self.ego)
         self.current_wpt, progress = self._get_waypoint_xyz()
 
         delta_yaw, wpt_yaw, ego_yaw = self._get_delta_yaw()
@@ -220,7 +248,7 @@ class CarlaEnv(gym.Env):
     def _terminal(self):
         """Calculate whether to terminate the current episode."""
         # Get ego state
-        ego_x, ego_y = self._get_ego_pos()
+        ego_x, ego_y = self._get_actor_pos(self.ego)
 
         # If at destination
         dest = self.dest
@@ -231,7 +259,10 @@ class CarlaEnv(gym.Env):
 
         # If collides
         if self.collision_occured:
-            self.logger.debug("Collision happened!")
+            if self.pedestrian_collision:
+                self.logger.debug("Pedestrian collision happened!")
+            else:
+                self.logger.debug("Collision happened!")
             self.isCollided = True
             return True
 
@@ -264,12 +295,10 @@ class CarlaEnv(gym.Env):
 
         return False
 
-    def _get_ego_pos(self):
-        """Get the ego vehicle pose (x, y)."""
-        ego_trans = self.ego.get_transform()
-        ego_x = ego_trans.location.x
-        ego_y = ego_trans.location.y
-        return ego_x, ego_y
+    def _get_actor_pos(self, actor: carla.Actor) -> Tuple[float, float]:
+        """Get the actor pose (x, y)."""
+        location = actor.get_location()
+        return location.x, location.y
 
     def _try_spawn_ego_vehicle_at(self, transform):
         """Try to spawn the ego vehicle at specific transform.
@@ -297,6 +326,7 @@ class CarlaEnv(gym.Env):
         """
         weights = self.reward_weights
 
+        # Terminal/Sparse rewards
         if self.pedestrian_collision:
             return weights["c_terminal_pedestrian_collision"]
         if self.isCollided:
@@ -306,6 +336,7 @@ class CarlaEnv(gym.Env):
         if self.isSuccess:
             return weights["c_completion"]
 
+        # Dense rewards
         v = self.ego.get_velocity()
         speed_norm = np.linalg.norm(np.array([v.x, v.y]))
         if speed_norm > self.desired_speed:
@@ -327,7 +358,12 @@ class CarlaEnv(gym.Env):
         r_dist_from_goal = weights["c_dist_from_goal"] * (-1 + self.state_info["progress"])
         r_progress = weights["c_progress"] * self.state_info["progress"]
 
-        r_tot = r_v_eff + weights["r_step"] + r_delta_yaw + r_action_regularized + r_lateral + r_progress + r_dist_from_goal
+        if self._get_closest_pedestrian_distance() < self.pedestrian_proximity_threshold:
+            r_pedestrian = weights["c_pedestrian_proximity"]
+        else:
+            r_pedestrian = 0
+
+        r_tot = r_v_eff + weights["r_step"] + r_delta_yaw + r_action_regularized + r_lateral + r_progress + r_dist_from_goal + r_pedestrian
 
         return r_tot
 
