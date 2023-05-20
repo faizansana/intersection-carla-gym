@@ -17,6 +17,7 @@ env:
   max_steps: 500
   CAM_RES: 1024
   max_waypt: 200
+  pedestrian_proximity_threshold: 5.0
   reward_weights:
     # Route completion reward
     c_completion: 100.0
@@ -36,8 +37,10 @@ env:
     # Penalty for yaw delta w.r.t. road heading
     c_yaw_delta: -0.0
     # Penalty for lateral deviation
-    c_lat_dev: -0.1
+    c_lat_dev: -0.0
     # Distance from goal penalty
     c_dist_from_goal: 3.5
     # Progress reward
     c_progress: 0.0
+    # Penalty for being close to pedestrians
+    c_pedestrian_proximity: -10.0
