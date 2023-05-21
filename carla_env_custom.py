@@ -535,7 +535,7 @@ class CarlaEnv(gym.Env):
             self.peds.append(pedestrian)
         x = 74.6
         for _ in range(self.num_ped):
-            self._try_spawn_random_walker_at(carla.Transform(carla.Location(x=x, y=-144, z=10), carla.Rotation(yaw=random.randint(0, 360))))
+            pedestrian = self._try_spawn_random_walker_at(carla.Transform(carla.Location(x=x, y=-144, z=10), carla.Rotation(yaw=random.randint(0, 360))))
             x += 1
             self.peds.append(pedestrian)
         x = 92.7
