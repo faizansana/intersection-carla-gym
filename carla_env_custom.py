@@ -318,7 +318,7 @@ class CarlaEnv(gym.Env):
     def _get_obs(self):
         return np.float32(self._info2normalized_state_vector())
 
-    def _get_reward(self, action):
+    def _get_reward(self, action: np.ndarray) -> float:
         """
         calculate the reward of current state
         params:
@@ -621,13 +621,14 @@ class CarlaEnv(gym.Env):
             return walker_actor
         return None
 
-    def _get_action_speed(self, action: Union[np.ndarray, int]) -> float:
+    def _get_action_speed(self, action: np.ndarray) -> float:
         """Map action to speed value in m/s."""
         if self.continuous:
             # Map action to [-self.desired_speed, self.desired_speed]
             speed = action * self.desired_speed
             return speed[0]
         else:
+            action = int(action)
             if self.ACTIONS[action] == "SLOWER":
                 # Shift list to the left
                 self.speed_index = max(0, self.speed_index - 1)
@@ -639,7 +640,8 @@ class CarlaEnv(gym.Env):
 
             return self.target_speeds[self.speed_index]
 
-    def step(self, action: Union[np.ndarray, int]):
+    def step(self, action: np.ndarray) -> Tuple[np.ndarray, float, bool, Dict]:
+        
         speed_in_vms = self._get_action_speed(action)
         # Convert m/s to km/h since the planner takes km/h as input
         speed_in_km_h = speed_in_vms * 3.6
@@ -697,8 +699,8 @@ if __name__ == "__main__":
         (1024, 1024),
         pygame.HWSURFACE | pygame.DOUBLEBUF)
 
-    cfg = yaml.safe_load(open("config.yaml", "r"))
-    env = CarlaEnv(cfg=cfg, host="intersection-driving-carla_server_high-2", tm_port=8010)
+    cfg = yaml.safe_load(open("config_discrete.yaml", "r"))
+    env = CarlaEnv(cfg=cfg, host="intersection-driving-carla_server_low-2", tm_port=9020)
     obs, info = env.reset()
 
     try:
