@@ -750,14 +750,14 @@ if __name__ == "__main__":
         pygame.HWSURFACE | pygame.DOUBLEBUF)
 
     cfg = yaml.safe_load(open("config_discrete.yaml", "r"))
-    env = CarlaEnv(cfg=cfg, host="intersection-driving-carla_server_low-2", tm_port=9020)
-    obs, info = env.reset()
+    env = CarlaEnv(cfg=cfg, host="intersection-driving-carla_server_debug-2", tm_port=9020)
+    obs = env.reset()
 
     try:
         while True:
-            obs, reward, done, done, info = env.step(np.array([1.0], dtype=np.float32))
+            obs, reward, done, info = env.step(np.array([2.0], dtype=np.float32))
             if done:
-                obs, info = env.reset()
+                obs = env.reset()
 
             env.display(display=display)
             pygame.display.flip()
