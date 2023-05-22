@@ -5,8 +5,7 @@ from __future__ import division
 import copy
 import random
 import sys
-import time
-from typing import Dict, Union, Tuple
+from typing import Dict, List, Tuple
 
 sys.path.append("../carla-0.9.10-py3.7-linux-x86_64.egg")
 import carla
@@ -115,9 +114,20 @@ class CarlaEnv(gym.Env):
                 closest_ped_dist = dist
                 closest_ped = ped
         return closest_ped_dist
+    
+    def _get_closest_vehicle_distance(self):
+        closest_vehicle = self.target_vehicles[0]
+        closest_vehicle_dist = self._distance_between_actors(self.ego, closest_vehicle)
+
+        for vehicle in self.target_vehicles:
+            dist = self._distance_between_actors(self.ego, vehicle)
+            if dist < closest_vehicle_dist:
+                closest_vehicle_dist = dist
+                closest_vehicle = vehicle
+        return closest_vehicle_dist
 
     def _distance_between_actors(self, first_actor: carla.Actor, second_actor: carla.Actor) -> float:
-        """Calculates euclidean distance between two actors.
+        """Calculates euclidean distance between two actors. Front Edge of first actor and all sides of other actor.
 
         Args:
             first_actor (carla.Actor): Actor1
@@ -126,10 +136,45 @@ class CarlaEnv(gym.Env):
         Returns:
             _type_: _description_
         """
-        first_x, first_y = self._get_actor_pos(first_actor)
-        second_x, second_y = self._get_actor_pos(second_actor)
-        return np.sqrt((first_x - second_x)**2 + (first_y - second_y)**2)
+        first_actor_coordinates = self._get_bounding_box(first_actor)
+        first_actor_coordinates = first_actor_coordinates[2:]
+        second_actor_coordinates = self._get_bounding_box(second_actor)
 
+        # Get the smallest distance between coordinates
+        min_dist = 100000
+        for first_coord in first_actor_coordinates:
+            for second_coord in second_actor_coordinates:
+                dist = self._distance_between_locations(first_coord, second_coord)
+                if dist < min_dist:
+                    min_dist = dist
+
+        return min_dist
+    
+    def _get_bounding_box(self, actor: carla.Actor) -> List[carla.Location]:
+        bb = actor.bounding_box.extent
+        corners = [
+            carla.Location(x=-bb.x, y=-bb.y),
+            carla.Location(x=bb.x, y=-bb.y),
+            carla.Location(x=bb.x, y=bb.y),
+            carla.Location(x=-bb.x, y=bb.y)]
+        t = actor.get_transform()
+        t.transform(corners)
+        return corners
+
+    def _distance_between_locations(self, first_location: carla.Location, second_location: carla.Location) -> float:
+        """Calculates euclidean distance between two locations.
+
+        Args:
+            first_location (carla.Location): Location1
+            second_location (carla.Location): Location2
+
+        Returns:
+            float: Distance between locations
+        """
+        x1, y1 = first_location.x, first_location.y
+        x2, y2 = second_location.x, second_location.y
+        return np.sqrt((x1 - x2) ** 2 + (y1 - y2) ** 2)
+    
     def _normalize_reward_weights(self):
         # Find the max negative reward in the reward weights
         max_neg_reward = abs(min(v for k, v in self.reward_weights.items() if v < 0))
@@ -363,7 +408,12 @@ class CarlaEnv(gym.Env):
         else:
             r_pedestrian = 0
 
-        r_tot = r_v_eff + weights["r_step"] + r_delta_yaw + r_action_regularized + r_lateral + r_progress + r_dist_from_goal + r_pedestrian
+        if self._get_closest_vehicle_distance() < self.vehicle_proximity_threshold:
+            r_vehicle_proximity = weights["c_vehicle_proximity"]
+        else:
+            r_vehicle_proximity = 0
+
+        r_tot = r_v_eff + weights["r_step"] + r_delta_yaw + r_action_regularized + r_lateral + r_progress + r_dist_from_goal + r_pedestrian + r_vehicle_proximity
 
         return r_tot
 
