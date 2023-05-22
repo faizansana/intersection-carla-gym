@@ -14,7 +14,8 @@ env:
   max_steps: 500
   CAM_RES: 1024
   max_waypt: 200
-  pedestrian_proximity_threshold: 5.0
+  pedestrian_proximity_threshold: 2.0
+  vehicle_proximity_threshold: 2.5
   reward_weights:
     # Route completion reward
     c_completion: 100.0
@@ -41,3 +42,5 @@ env:
     c_progress: 0.0
     # Penalty for being close to pedestrians
     c_pedestrian_proximity: -10.0
+    # Penalty for being close to vehicles
+    c_vehicle_proximity: -5.0
