@@ -52,7 +52,16 @@ class CarlaEnv(gym.Env):
             self.speed_index = 0
         num_vehicles = 3 * self.num_veh
         num_pedestrians = 4 * self.num_ped
-        self.observation_space = spaces.Box(low=-50.0, high=50.0, shape=(7 + 3*num_vehicles + 3*num_pedestrians, ), dtype=np.float32)
+        if self.obs_space == "normal":
+            self.observation_space = spaces.Box(low=-50.0, high=50.0, shape=(7 + 3*num_vehicles + 3*num_pedestrians, ), dtype=np.float32)
+        elif self.obs_space == "dict":
+            self.observation_space = spaces.Dict(
+                {
+                    "ego_state": spaces.Box(low=-50.0, high=50.0, shape=(7,), dtype=np.float32),
+                    "adv_vehicles": spaces.Box(low=-50.0, high=50.0, shape=(3*num_vehicles,), dtype=np.float32),
+                    "pedestrians": spaces.Box(low=-50.0, high=50.0, shape=(3*num_pedestrians,), dtype=np.float32)
+                }
+            )
 
         # Connect to carla server and get world object
         self._make_carla_client(host, self.port)
@@ -114,7 +123,7 @@ class CarlaEnv(gym.Env):
                 closest_ped_dist = dist
                 closest_ped = ped
         return closest_ped_dist
-    
+
     def _get_closest_vehicle_distance(self):
         closest_vehicle = self.target_vehicles[0]
         closest_vehicle_dist = self._distance_between_actors(self.ego, closest_vehicle)
@@ -149,7 +158,7 @@ class CarlaEnv(gym.Env):
                     min_dist = dist
 
         return min_dist
-    
+
     def _get_bounding_box(self, actor: carla.Actor) -> List[carla.Location]:
         bb = actor.bounding_box.extent
         corners = [
@@ -174,7 +183,7 @@ class CarlaEnv(gym.Env):
         x1, y1 = first_location.x, first_location.y
         x2, y2 = second_location.x, second_location.y
         return np.sqrt((x1 - x2) ** 2 + (y1 - y2) ** 2)
-    
+
     def _normalize_reward_weights(self):
         # Find the max negative reward in the reward weights
         max_neg_reward = abs(min(v for k, v in self.reward_weights.items() if v < 0))
@@ -361,7 +370,7 @@ class CarlaEnv(gym.Env):
         return False
 
     def _get_obs(self):
-        return np.float32(self._info2normalized_state_vector())
+        return self._info2normalized_state_vector()
 
     def _get_reward(self, action: np.ndarray) -> float:
         """
@@ -498,11 +507,17 @@ class CarlaEnv(gym.Env):
         ped_dist_x = np.array(self.state_info["peds_dist_x"]).reshape((len(self.state_info["peds_dist_y"]), )) / 30
         ped_vel = np.array(self.state_info["peds_vel"]).reshape((len(self.state_info["peds_dist_y"]), )) / 7
 
-        info_vec = np.concatenate([
-            velocity_t, accel_t, delta_yaw_t, dyaw_dt_t, lateral_dist_t,
-            target_dist_y, target_dist_x, target_vel, ped_dist_y, ped_dist_x, ped_vel
-        ], axis=0)
-        info_vec = info_vec.squeeze()
+        if self.obs_space == "normal":
+            info_vec = np.concatenate([
+                velocity_t, accel_t, delta_yaw_t, dyaw_dt_t, lateral_dist_t,
+                target_dist_y, target_dist_x, target_vel, ped_dist_y, ped_dist_x, ped_vel
+            ], axis=0, dtype=np.float32)
+        elif self.obs_space == "dict":
+            info_vec = {
+                "ego_state": np.concatenate([velocity_t, accel_t, delta_yaw_t, dyaw_dt_t, lateral_dist_t], axis=0, dtype=np.float32),
+                "adv_vehicles": np.concatenate([target_dist_y, target_dist_x, target_vel], axis=0, dtype=np.float32),
+                "pedestrians": np.concatenate([ped_dist_y, ped_dist_x, ped_vel], axis=0, dtype=np.float32)
+            }
 
         return info_vec
 
@@ -691,7 +706,7 @@ class CarlaEnv(gym.Env):
             return self.target_speeds[self.speed_index]
 
     def step(self, action: np.ndarray) -> Tuple[np.ndarray, float, bool, Dict]:
-        
+
         speed_in_vms = self._get_action_speed(action)
         # Convert m/s to km/h since the planner takes km/h as input
         speed_in_km_h = speed_in_vms * 3.6
