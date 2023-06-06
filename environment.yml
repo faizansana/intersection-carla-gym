@@ -1,0 +1,33 @@
+channels:
+  - defaults
+dependencies:
+  - _libgcc_mutex=0.1
+  - _openmp_mutex=5.1
+  - ca-certificates=2023.01.10
+  - ld_impl_linux-64=2.38
+  - libffi=3.4.4
+  - libgcc-ng=11.2.0
+  - libgomp=11.2.0
+  - libstdcxx-ng=11.2.0
+  - ncurses=6.4
+  - openssl=1.1.1t
+  - pip=23.0.1
+  - python=3.8.16
+  - readline=8.2
+  - setuptools=67.8.0
+  - sqlite=3.41.2
+  - tk=8.6.12
+  - wheel=0.38.4
+  - xz=5.4.2
+  - zlib=1.2.13
+  - pip:
+      - cloudpickle==2.2.1
+      - farama-notifications==0.0.4
+      - gymnasium==0.28.1
+      - importlib-metadata==6.6.0
+      - jax-jumpy==1.0.0
+      - networkx==3.1
+      - numpy==1.24.3
+      - pygame==2.4.0
+      - typing-extensions==4.6.3
+      - zipp==3.15.0
