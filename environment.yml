@@ -22,12 +22,10 @@ dependencies:
   - zlib=1.2.13
   - pip:
       - cloudpickle==2.2.1
-      - farama-notifications==0.0.4
-      - gymnasium==0.28.1
+      - gym==0.26.2
+      - gym-notices==0.0.8
       - importlib-metadata==6.6.0
-      - jax-jumpy==1.0.0
       - networkx==3.1
       - numpy==1.24.3
       - pygame==2.4.0
-      - typing-extensions==4.6.3
       - zipp==3.15.0
