@@ -4,10 +4,8 @@ from __future__ import division
 
 import copy
 import random
-import sys
 from typing import Dict, List, Tuple
 
-sys.path.append("../carla-0.9.10-py3.7-linux-x86_64.egg")
 import carla
 import gymnasium as gym
 import numpy as np
@@ -765,7 +763,7 @@ if __name__ == "__main__":
         pygame.HWSURFACE | pygame.DOUBLEBUF)
 
     cfg = yaml.safe_load(open("config_discrete.yaml", "r"))
-    env = CarlaEnv(cfg=cfg, host="intersection-driving-carla_server_low-2", tm_port=9020)
+    env = CarlaEnv(cfg=cfg, host="carla_server", tm_port=9020)
     obs, info = env.reset()
 
     try:
