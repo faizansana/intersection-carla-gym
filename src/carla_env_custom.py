@@ -4,7 +4,7 @@ from __future__ import division
 
 import copy
 import random
-from typing import Dict, List, Tuple
+from typing import Dict, Tuple
 
 import carla
 import gymnasium as gym
@@ -18,6 +18,8 @@ import util.misc as helper
 from local_carla_agents.navigation.global_route_planner import GlobalRoutePlanner
 from local_carla_agents.navigation.global_route_planner_dao import GlobalRoutePlannerDAO
 from local_carla_agents.navigation.local_planner import LocalPlanner
+
+MAX_VALUE = 1000000
 
 
 class CarlaEnv(gym.Env):
@@ -71,9 +73,19 @@ class CarlaEnv(gym.Env):
         self.collision_occured = False
         self.collision_bp = self.world.get_blueprint_library().find("sensor.other.collision")
 
+        # Obstacle sensor
+        self.obstacle_bp = self.world.get_blueprint_library().find("sensor.other.obstacle")
+        distance = max(self.pedestrian_proximity_threshold, self.vehicle_proximity_threshold) + 3
+        self.obstacle_bp.set_attribute("only_dynamics", "true")
+        self.obstacle_bp.set_attribute("debug_linetrace", "true")
+        self.obstacle_bp.set_attribute("distance", str(distance))
+        # Set hit radius based on ego_bp length
+        # TODO: Make the hit radius a parameter and do it based on car length
+        self.obstacle_bp.set_attribute("hit_radius", "1.5")
+
         # Add Top down Camera sensor
         self.camera_img = np.zeros((self.CAM_RES, self.CAM_RES, 3), dtype=np.uint8)
-        self.camera_trans = carla.Transform(carla.Location(x=0.8, z=50), carla.Rotation(pitch=-90))
+        self.camera_trans = carla.Transform(carla.Location(x=0.8, z=20), carla.Rotation(pitch=-90))
         self.camera_bp = self.world.get_blueprint_library().find("sensor.camera.rgb")
         # Modify the attributes of the blueprint to set image resolution and field of view.
         self.camera_bp.set_attribute("image_size_x", str(self.CAM_RES))
@@ -110,77 +122,6 @@ class CarlaEnv(gym.Env):
         # Setup info variables
         self.isCollided = False
         self.isSuccess = False
-
-    def _get_closest_pedestrian_distance(self):
-        closest_ped = self.peds[0]
-        closest_ped_dist = self._distance_between_actors(self.ego, closest_ped)
-
-        for ped in self.peds:
-            dist = self._distance_between_actors(self.ego, ped)
-            if dist < closest_ped_dist:
-                closest_ped_dist = dist
-                closest_ped = ped
-        return closest_ped_dist
-
-    def _get_closest_vehicle_distance(self):
-        closest_vehicle = self.target_vehicles[0]
-        closest_vehicle_dist = self._distance_between_actors(self.ego, closest_vehicle)
-
-        for vehicle in self.target_vehicles:
-            dist = self._distance_between_actors(self.ego, vehicle)
-            if dist < closest_vehicle_dist:
-                closest_vehicle_dist = dist
-                closest_vehicle = vehicle
-        return closest_vehicle_dist
-
-    def _distance_between_actors(self, first_actor: carla.Actor, second_actor: carla.Actor) -> float:
-        """Calculates euclidean distance between two actors. Front Edge of first actor and all sides of other actor.
-
-        Args:
-            first_actor (carla.Actor): Actor1
-            second_actor (carla.Actor): Actor2
-
-        Returns:
-            _type_: _description_
-        """
-        first_actor_coordinates = self._get_bounding_box(first_actor)
-        first_actor_coordinates = first_actor_coordinates[2:]
-        second_actor_coordinates = self._get_bounding_box(second_actor)
-
-        # Get the smallest distance between coordinates
-        min_dist = 100000
-        for first_coord in first_actor_coordinates:
-            for second_coord in second_actor_coordinates:
-                dist = self._distance_between_locations(first_coord, second_coord)
-                if dist < min_dist:
-                    min_dist = dist
-
-        return min_dist
-
-    def _get_bounding_box(self, actor: carla.Actor) -> List[carla.Location]:
-        bb = actor.bounding_box.extent
-        corners = [
-            carla.Location(x=-bb.x, y=-bb.y),
-            carla.Location(x=bb.x, y=-bb.y),
-            carla.Location(x=bb.x, y=bb.y),
-            carla.Location(x=-bb.x, y=bb.y)]
-        t = actor.get_transform()
-        t.transform(corners)
-        return corners
-
-    def _distance_between_locations(self, first_location: carla.Location, second_location: carla.Location) -> float:
-        """Calculates euclidean distance between two locations.
-
-        Args:
-            first_location (carla.Location): Location1
-            second_location (carla.Location): Location2
-
-        Returns:
-            float: Distance between locations
-        """
-        x1, y1 = first_location.x, first_location.y
-        x2, y2 = second_location.x, second_location.y
-        return np.sqrt((x1 - x2) ** 2 + (y1 - y2) ** 2)
 
     def _normalize_reward_weights(self):
         # Find the max negative reward in the reward weights
@@ -410,12 +351,12 @@ class CarlaEnv(gym.Env):
         r_dist_from_goal = weights["c_dist_from_goal"] * (-1 + self.state_info["progress"])
         r_progress = weights["c_progress"] * self.state_info["progress"]
 
-        if self._get_closest_pedestrian_distance() < self.pedestrian_proximity_threshold:
+        if self._closest_pedestrian_distance < self.pedestrian_proximity_threshold:
             r_pedestrian = weights["c_pedestrian_proximity"]
         else:
             r_pedestrian = 0
 
-        if self._get_closest_vehicle_distance() < self.vehicle_proximity_threshold:
+        if self._closest_vehicle_distance < self.vehicle_proximity_threshold:
             r_vehicle_proximity = weights["c_vehicle_proximity"]
         else:
             r_vehicle_proximity = 0
@@ -519,15 +460,12 @@ class CarlaEnv(gym.Env):
 
         return info_vec
 
-    def _transform(self, x, y, yaw):
-        veh1_t = carla.Transform()
-        veh1_t.location.x = x
-        veh1_t.location.y = y
-        veh1_t.location.z = 0.2
-        veh1_t.rotation.yaw += yaw
-        return veh1_t
-
     def reset(self, seed=None):
+        # Obstacle sensor variables
+        self.ego_obstacle_sensor = None
+        self._closest_pedestrian_distance = MAX_VALUE
+        self._closest_vehicle_distance = MAX_VALUE
+
         self.ego_collision_sensor = None
         self.camera_sensor = None
         self.collision_occured = False
@@ -555,6 +493,19 @@ class CarlaEnv(gym.Env):
         # Add collision sensor
         self.ego_collision_sensor = self.world.spawn_actor(self.collision_bp, carla.Transform(), attach_to=self.ego)
         self.ego_collision_sensor.listen(lambda event: collision_event(event))
+
+        # Add obstacle sensor
+        self.ego_obstacle_sensor = self.world.spawn_actor(self.obstacle_bp, carla.Transform(), attach_to=self.ego)
+        self.ego_obstacle_sensor.listen(lambda event: obstacle_event(event))
+
+        def obstacle_event(event):
+            # Check if the obstacle is a pedestrian
+            if event.other_actor.type_id.startswith("walker"):
+                self._closest_pedestrian_distance = event.distance
+
+            # Check if the obstacle is a vehicle
+            if event.other_actor.type_id.startswith("vehicle"):
+                self._closest_vehicle_distance = event.distance
 
         def collision_event(event):
             self.collision_occured = True
@@ -705,6 +656,10 @@ class CarlaEnv(gym.Env):
 
     def step(self, action: np.ndarray) -> Tuple[np.ndarray, float, bool, Dict]:
 
+        # Reset closest pedestrian and vehicle variables
+        self._closest_pedestrian_distance = MAX_VALUE
+        self._closest_vehicle_distance = MAX_VALUE
+
         speed_in_vms = self._get_action_speed(action)
         # Convert m/s to km/h since the planner takes km/h as input
         speed_in_km_h = speed_in_vms * 3.6
@@ -768,7 +723,7 @@ if __name__ == "__main__":
 
     try:
         while True:
-            obs, reward, done, done, info = env.step(np.array([1.0], dtype=np.float32))
+            obs, reward, done, done, info = env.step(np.array([2.0], dtype=np.float32))
             if done:
                 obs, info = env.reset()
 
