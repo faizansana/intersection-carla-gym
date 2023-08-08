@@ -352,12 +352,13 @@ class CarlaEnv(gym.Env):
         r_progress = weights["c_progress"] * self.state_info["progress"]
 
         if self._closest_pedestrian_distance < self.pedestrian_proximity_threshold:
-            r_pedestrian = weights["c_pedestrian_proximity"]
+            # Increase negative reward as pedestrian distance decreases
+            r_pedestrian = weights["c_pedestrian_proximity"] * (self.pedestrian_proximity_threshold - self._closest_pedestrian_distance)
         else:
             r_pedestrian = 0
 
         if self._closest_vehicle_distance < self.vehicle_proximity_threshold:
-            r_vehicle_proximity = weights["c_vehicle_proximity"]
+            r_vehicle_proximity = weights["c_vehicle_proximity"] * (self.vehicle_proximity_threshold - self._closest_vehicle_distance)
         else:
             r_vehicle_proximity = 0
 
