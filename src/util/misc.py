@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+import socket
 from typing import List
 
 import carla
@@ -253,3 +254,11 @@ def xyyawtransform_to_carla_transform(x: float, y: float, yaw: float) -> carla.T
     veh1_t.location.z = 0.2
     veh1_t.rotation.yaw += yaw
     return veh1_t
+
+def get_open_port() -> int:
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.bind(("",0))
+    s.listen(1)
+    port = s.getsockname()[1]
+    s.close()
+    return port

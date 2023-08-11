@@ -36,7 +36,7 @@ class CarlaEnv(gym.Env):
     def __init__(self, cfg: Dict, host: str, tm_port: int = 8000):
         for k, v in cfg["env"].items():
             setattr(self, k, v)
-        self.tm_port = tm_port
+        self.tm_port = helper.get_open_port()
         host_num = host.split("_")[-1]
         exp_name = cfg["exp_name"]
         outdir = cfg["output_dir"]
@@ -719,7 +719,7 @@ if __name__ == "__main__":
         pygame.HWSURFACE | pygame.DOUBLEBUF)
 
     cfg = yaml.safe_load(open("config_discrete.yaml", "r"))
-    env = CarlaEnv(cfg=cfg, host="carla_server", tm_port=9020)
+    env = CarlaEnv(cfg=cfg, host="intersection-driving-carla_server-1", tm_port=9020)
     obs, info = env.reset()
 
     try:
