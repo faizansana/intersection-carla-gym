@@ -7,8 +7,8 @@ services:
         - CARLA_VERSION=${CARLA_VERSION:?}
         - CUDA_VERSION=${CUDA_VERSION:?}
       cache_from:
-        - faizansana/custom-carla-gym:cuda-${CUDA_VERSION:?}-carla-${CARLA_VERSION:?}
-    image: faizansana/custom-carla-gym:cuda-${CUDA_VERSION:?}-carla-${CARLA_VERSION:?}
+        - faizansana/custom-carla-gym:cuda-${CUDA_VERSION:?}-carla-${CARLA_VERSION:?}-gym-v0.21
+    image: faizansana/custom-carla-gym:cuda-${CUDA_VERSION:?}-carla-${CARLA_VERSION:?}-gym-v0.21
     user: ${FIXUID:?}:${FIXGID:?}
     volumes:
       - ./:/home/docker/src
