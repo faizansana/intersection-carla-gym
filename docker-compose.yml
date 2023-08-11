@@ -1,0 +1,28 @@
+version: "3.8"
+services:
+  main_container:
+    build:
+      context: ./docker
+      args:
+        - CARLA_VERSION=${CARLA_VERSION:?}
+        - CUDA_VERSION=${CUDA_VERSION:?}
+      cache_from:
+        - faizansana/custom-carla-gym:cuda-${CUDA_VERSION:?}-carla-${CARLA_VERSION:?}
+    image: faizansana/custom-carla-gym:cuda-${CUDA_VERSION:?}-carla-${CARLA_VERSION:?}
+    user: ${FIXUID:?}:${FIXGID:?}
+    volumes:
+      - ./:/home/docker/src
+    depends_on:
+      - carla_server
+
+  carla_server:
+    image: "carlasim/carla:${CARLA_VERSION}"
+    command: /bin/bash -c "SDL_VIDEODRIVER=offscreen && ./CarlaUE4.sh -RenderOffScreen -world-port=2000 -quality-level=${CARLA_QUALITY} -nosound -carla-server -fps=30"
+    restart: always
+    deploy:
+      resources:
+        reservations:
+          devices:
+          - driver: nvidia
+            device_ids: ['2']
+            capabilities: [gpu]
