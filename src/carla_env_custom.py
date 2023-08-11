@@ -719,7 +719,7 @@ if __name__ == "__main__":
         pygame.HWSURFACE | pygame.DOUBLEBUF)
 
     cfg = yaml.safe_load(open("config_discrete.yaml", "r"))
-    env = CarlaEnv(cfg=cfg, host="intersection-driving-carla_server_debug-2", tm_port=9020)
+    env = CarlaEnv(cfg=cfg, host="carla_server", tm_port=9020)
     obs = env.reset()
 
     try:
