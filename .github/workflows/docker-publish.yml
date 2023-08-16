@@ -10,7 +10,7 @@ jobs:
   build-and-publish:
     strategy:
       matrix:
-        cuda: ["11.8.0"]
+        cuda: ["11.8.0", "11.4.3"]
         carla: ["0.9.10.1"]
     runs-on: ubuntu-latest
     steps:
