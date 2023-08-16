@@ -37,6 +37,7 @@ class CarlaEnv(gym.Env):
         for k, v in cfg["env"].items():
             setattr(self, k, v)
         self.tm_port = helper.get_open_port()
+        self.ego = None
         host_num = host.split("_")[-1]
         exp_name = cfg["exp_name"]
         outdir = cfg["output_dir"]
@@ -474,7 +475,7 @@ class CarlaEnv(gym.Env):
 
         self._set_synchronous_mode(False)
         # Delete sensors, vehicles and walkers
-        self._clear_all_actors(['sensor.other.collision', 'sensor.camera.rgb', 'vehicle.*', 'controller.ai.walker', 'walker.*'])
+        self._clear_actors_batch()
 
         self.target_vehicles = []
         self.peds = []
@@ -690,7 +691,7 @@ class CarlaEnv(gym.Env):
         camera_surface = self._to_display_surface(self.og_camera_img)
         display.blit(camera_surface, (0, 0))
 
-    def _clear_all_actors(self, actor_filters):
+    def _clear_actor_filters(self, actor_filters):
         """Clear specific actors."""
         for actor_filter in actor_filters:
             for actor in self.world.get_actors().filter(actor_filter):
@@ -698,6 +699,22 @@ class CarlaEnv(gym.Env):
                     if actor.type_id == 'controller.ai.walker':
                         actor.stop()
                     actor.destroy()
+    
+    def _clear_actors_batch(self):
+        
+        # Destroy all sensors and ai walker
+        self._clear_actor_filters(["controller.ai.walker", "sensor.other.collision", "sensor.camera.rgb", "sensor.other.obstacle"])
+        
+        batch = []
+        for peds in self.peds:
+            batch.append(carla.command.DestroyActor(peds))
+        for vehicle in self.target_vehicles:
+            batch.append(carla.command.DestroyActor(vehicle))
+        
+        if self.ego:
+            batch.append(carla.command.DestroyActor(self.ego))
+
+        self.client.apply_batch_sync(batch)
 
     def _set_synchronous_mode(self, synchronous=True):
         """Set whether to use the synchronous mode.
