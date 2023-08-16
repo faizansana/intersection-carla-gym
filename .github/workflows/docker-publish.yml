@@ -41,4 +41,4 @@ jobs:
             CUDA_VERSION=${{ matrix.cuda }}
             CARLA_VERSION=${{ matrix.carla }}
           push: true
-          tags: faizansana/custom-carla-gym:cuda-${{ matrix.cuda }}-carla-${{ matrix.carla }}
+          tags: faizansana/intersection-carla-gym:cuda-${{ matrix.cuda }}-carla-${{ matrix.carla }}
