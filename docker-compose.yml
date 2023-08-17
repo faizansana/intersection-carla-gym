@@ -12,6 +12,7 @@ services:
     user: ${FIXUID:?}:${FIXGID:?}
     volumes:
       - ./:/home/docker/src
+    runtime: nvidia
     depends_on:
       - carla_server
 
@@ -24,5 +25,5 @@ services:
         reservations:
           devices:
           - driver: nvidia
-            device_ids: ['2']
+            device_ids: ['${GPU_ID:?}']
             capabilities: [gpu]
