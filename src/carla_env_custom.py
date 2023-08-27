@@ -485,6 +485,7 @@ class CarlaEnv(gym.Env):
 
         self.target_vehicles = []
         self.peds = []
+        self.ped_controllers = []
         assert (self.num_veh <= 3)
         # assert(self.num_ped <= 2)
         if self._try_spawn_ego_vehicle_at(self.start) is False:
