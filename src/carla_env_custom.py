@@ -4,7 +4,7 @@ from __future__ import division
 
 import copy
 import random
-from typing import Dict, Tuple
+from typing import Dict, List, Tuple
 
 import carla
 import gymnasium as gym
@@ -15,11 +15,16 @@ from gymnasium import spaces
 
 import util.carla_logger as carla_logger
 import util.misc as helper
+from util.pedestrian_control import PedestrianControl
 from local_carla_agents.navigation.global_route_planner import GlobalRoutePlanner
 from local_carla_agents.navigation.global_route_planner_dao import GlobalRoutePlannerDAO
 from local_carla_agents.navigation.local_planner import LocalPlanner
 
 MAX_VALUE = 1000000
+
+import faulthandler
+
+faulthandler.enable(file=open("traceback.txt", "a"), all_threads=True)
 
 
 class CarlaEnv(gym.Env):
@@ -36,7 +41,7 @@ class CarlaEnv(gym.Env):
     def __init__(self, cfg: Dict, host: str, tm_port: int = 8000):
         for k, v in cfg["env"].items():
             setattr(self, k, v)
-        self.tm_port = helper.get_open_port()
+        self.tm_port = tm_port
         self.ego = None
         host_num = host.split("_")[-1]
         exp_name = cfg["exp_name"]
@@ -108,6 +113,7 @@ class CarlaEnv(gym.Env):
         # self.distances = [1., 5., 10.]
         self.target_vehicles = []
         self.peds = []
+        self.ped_controllers: List[PedestrianControl] = []
 
         self.og_camera_img = None
 
@@ -546,24 +552,28 @@ class CarlaEnv(gym.Env):
     def _spawn_surrounding_pedestrians(self):
         x = 92.7
         for _ in range(self.num_ped):
-            pedestrian = self._try_spawn_random_walker_at(carla.Transform(carla.Location(x=x, y=-144, z=10), carla.Rotation(yaw=random.randint(0, 360))))
+            pedestrian, controller = self._try_spawn_random_walker_at(carla.Transform(carla.Location(x=x, y=-144, z=10), carla.Rotation(yaw=random.randint(0, 360))))
             x += 1
             self.peds.append(pedestrian)
+            self.ped_controllers.append(controller)
         x = 74.6
         for _ in range(self.num_ped):
-            pedestrian = self._try_spawn_random_walker_at(carla.Transform(carla.Location(x=x, y=-144, z=10), carla.Rotation(yaw=random.randint(0, 360))))
+            pedestrian, controller = self._try_spawn_random_walker_at(carla.Transform(carla.Location(x=x, y=-144, z=10), carla.Rotation(yaw=random.randint(0, 360))))
             x += 1
             self.peds.append(pedestrian)
+            self.ped_controllers.append(controller)
         x = 92.7
         for _ in range(self.num_ped):
-            pedestrian = self._try_spawn_random_walker_at(carla.Transform(carla.Location(x=x, y=-125, z=10), carla.Rotation(yaw=random.randint(0, 360))))
+            pedestrian, controller = self._try_spawn_random_walker_at(carla.Transform(carla.Location(x=x, y=-125, z=10), carla.Rotation(yaw=random.randint(0, 360))))
             x += 1
             self.peds.append(pedestrian)
+            self.ped_controllers.append(controller)
         x = 74.6
         for _ in range(self.num_ped):
-            pedestrian = self._try_spawn_random_walker_at(carla.Transform(carla.Location(x=x, y=-125, z=10), carla.Rotation(yaw=random.randint(0, 360))))
+            pedestrian, controller = self._try_spawn_random_walker_at(carla.Transform(carla.Location(x=x, y=-125, z=10), carla.Rotation(yaw=random.randint(0, 360))))
             x += 1
             self.peds.append(pedestrian)
+            self.ped_controllers.append(controller)
 
     def _enable_adv_vehicles_autopilot_mode(self):
         traffic_manager = self.client.get_trafficmanager(self.tm_port)
@@ -626,16 +636,26 @@ class CarlaEnv(gym.Env):
         walker_actor = self.world.try_spawn_actor(walker_bp, transform)
 
         if walker_actor is not None:
-            walker_controller_bp = self.world.get_blueprint_library().find('controller.ai.walker')
-            walker_controller_actor = self.world.spawn_actor(walker_controller_bp, carla.Transform(), walker_actor)
-            # start walker
-            walker_controller_actor.start()
-            # set walk to random point
-            walker_controller_actor.go_to_location(self.world.get_random_location_from_navigation())
-            # random max speed
-            walker_controller_actor.set_max_speed(1 + random.random())    # max speed between 1 and 2 (default is 1.4 m/s)
-            return walker_actor
-        return None
+            # walker_controller_bp = self.world.get_blueprint_library().find('controller.ai.walker')
+            # walker_controller_actor = self.world.spawn_actor(walker_controller_bp, carla.Transform(), walker_actor)
+            # # start walker
+            # walker_controller_actor.start()
+            # loc = self.world.get_random_location_from_navigation()
+            # while loc is None:
+            #     loc = self.world.get_random_location_from_navigation()
+            # self.logger.debug("Spawn walker at {}".format(loc))
+            # walker_controller_actor.go_to_location(loc)
+            # # random max speed
+            # walker_controller_actor.set_max_speed(1 + random.random())    # max speed between 1 and 2 (default is 1.4 m/s)
+            walker_controller_actor = PedestrianControl(walker_actor)
+            walker_controller_actor.update_target_speed(1 + random.random())
+            loc = self.world.get_random_location_from_navigation()
+            while loc is None:
+                loc = self.world.get_random_location_from_navigation()
+            transform = carla.Transform(location=loc, rotation=carla.Rotation(yaw=0))
+            walker_controller_actor.update_waypoints([transform])
+            return walker_actor, walker_controller_actor
+        return None, None
 
     def _get_action_speed(self, action: np.ndarray) -> float:
         """Map action to speed value in m/s."""
@@ -669,6 +689,8 @@ class CarlaEnv(gym.Env):
         self.routeplanner.set_speed(speed_in_km_h)
         control = self.routeplanner.run_step(debug=True)
         self.ego.apply_control(control)
+        for controller in self.ped_controllers:
+            controller.run_step()
 
         self.world.tick()
 
@@ -736,7 +758,7 @@ if __name__ == "__main__":
         pygame.HWSURFACE | pygame.DOUBLEBUF)
 
     cfg = yaml.safe_load(open("config_discrete.yaml", "r"))
-    env = CarlaEnv(cfg=cfg, host="intersection-driving-carla_server-1", tm_port=9020)
+    env = CarlaEnv(cfg=cfg, host="carla_server", tm_port=9020)
     obs, info = env.reset()
 
     try:
