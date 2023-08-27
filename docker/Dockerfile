@@ -44,6 +44,7 @@ USER docker:docker
 ENV SHELL=/bin/bash
 ENV CARLA_VERSION ${CARLA_VERSION:?}
 ENV CONDA_DIR /home/docker/conda
+ENV CONDA_ENV_NAME custom_carla_gym
 WORKDIR /home/docker/Downloads
 
 RUN wget --quiet https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O ~/miniconda.sh && \
@@ -56,15 +57,16 @@ ENV PATH=$CONDA_DIR/bin:$PATH
 
 COPY --chown=docker:docker ./environment.yml /tmp
 RUN conda update conda && \
-    conda env create -n custom_carla_gym -f /tmp/environment.yml && \
+    conda env create -n $CONDA_ENV_NAME -f /tmp/environment.yml && \
     conda clean -a -y
 
 RUN conda init bash && \
-    echo "conda activate custom_carla_gym" >> ~/.bashrc && \
-    echo "export PYTHONPATH=$PYTHONPATH:/opt/carla/PythonAPI/carla/dist/carla-0.9.10-py3.7-linux-x86_64.egg" >> ~/.bashrc
-# Install carla python api if carla v0.9.12 or greater
+    echo "conda activate $CONDA_ENV_NAME" >> ~/.bashrc
+# Install carla python api if carla v0.9.12 or greater, otherwise add the egg to the python path
 RUN if [[ "$CARLA_VERSION" > "0.9.11" ]]; then \
-    ${CONDA_DIR}/envs/driving/bin/python -m pip install "carla==$CARLA_VERSION"; \
+    ${CONDA_DIR}/envs/$CONDA_ENV_NAME/bin/python -m pip install "carla==$CARLA_VERSION"; \
+    else \
+    echo "export PYTHONPATH=$PYTHONPATH:/opt/carla/PythonAPI/carla/dist/carla-${CARLA_VERSION}-py3.7-linux-x86_64.egg" >> ~/.bashrc; \
     fi
 ENV DISPLAY=:1.0
 WORKDIR /home/docker
