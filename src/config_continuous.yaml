@@ -11,7 +11,7 @@ env:
   render: false
   ego_vehicle_filter: "vehicle.lincoln*"
   num_veh: 1
-  num_ped: 1
+  num_ped: 2
   max_steps: 500
   CAM_RES: 1024
   max_waypt: 200
