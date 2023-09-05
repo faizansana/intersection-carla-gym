@@ -4,10 +4,18 @@
 
 # Getting Started
 
+
+## System Requirements
+
+The following are the requirements for running this repository using the provided docker files:
+
+- Operating System: Linux (tested on Ubuntu 20.04)
+- NVIDIA GPU with CUDA support (tested on NVIDIA GeForce RTX 3060/3080/3090)
+
 ## Prerequisites
 
-- [CARLA v0.9.10.1](https://github.com/carla-simulator/carla/releases/tag/0.9.10.1)
-- [Conda](https://docs.conda.io/projects/conda/en/latest/user-guide/install/linux.html)
+- [Docker](https://docs.docker.com/engine/install/)
+- [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html)
 
 ## Setup
 
@@ -23,13 +31,28 @@
     git checkout gym-v0.21
     ```
 
-3. From within the working directory, create the python environment.
+3. From within the working directory, open the `dev_config.sh` file to change any specific requirements such as CARLA version, CUDA version etc. 
+
+4. Run the `dev_config.sh` file to set the environment variables for docker.
 
     ```
-    conda create -f environment.yml -n NAME
+    bash dev_config.sh
+    ```
+5. Pull the already built containers from docker hub if they are available.
+
+    ```
+    docker compose pull
     ```
 
-# Usage
+6. After the containers have been pulled, start them using the following command.
+
+    ```
+    docker compose up -d
+    ```
+
+7. (Optional) Open the `main_container`, and attach it to VS Code using the `Remote Explorer` extension
+
+# Usage (from within main container)
 
 1. Setup a configuration file based on your requirements:
 
