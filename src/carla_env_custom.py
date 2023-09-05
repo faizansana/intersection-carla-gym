@@ -56,11 +56,12 @@ class CarlaEnv(gym.Env):
         if self.obs_space == "normal":
             self.observation_space = spaces.Box(low=-50.0, high=50.0, shape=(7 + 3*num_vehicles + 3*num_pedestrians, ), dtype=np.float32)
         elif self.obs_space == "dict":
+            # Create dict space based on number of vehicles and pedestrians
             self.observation_space = spaces.Dict(
                 {
                     "ego_state": spaces.Box(low=-50.0, high=50.0, shape=(7,), dtype=np.float32),
-                    "adv_vehicles": spaces.Box(low=-50.0, high=50.0, shape=(3*num_vehicles,), dtype=np.float32),
-                    "pedestrians": spaces.Box(low=-50.0, high=50.0, shape=(3*num_pedestrians,), dtype=np.float32)
+                    **({"adv_vehicles": spaces.Box(low=-50.0, high=50.0, shape=(3*num_vehicles,), dtype=np.float32)} if num_vehicles else {}),
+                    **({"pedestrians": spaces.Box(low=-50.0, high=50.0, shape=(3*num_pedestrians,), dtype=np.float32)} if num_pedestrians else {})
                 }
             )
 
@@ -456,8 +457,8 @@ class CarlaEnv(gym.Env):
         elif self.obs_space == "dict":
             info_vec = {
                 "ego_state": np.concatenate([velocity_t, accel_t, delta_yaw_t, dyaw_dt_t, lateral_dist_t], axis=0, dtype=np.float32),
-                "adv_vehicles": np.concatenate([target_dist_y, target_dist_x, target_vel], axis=0, dtype=np.float32),
-                "pedestrians": np.concatenate([ped_dist_y, ped_dist_x, ped_vel], axis=0, dtype=np.float32)
+                **({"adv_vehicles": np.concatenate([target_dist_y, target_dist_x, target_vel], axis=0, dtype=np.float32)} if self.num_veh else {}),
+                **({"pedestrians": np.concatenate([ped_dist_y, ped_dist_x, ped_vel], axis=0, dtype=np.float32)} if self.num_ped else {})
             }
 
         return info_vec
@@ -736,7 +737,7 @@ if __name__ == "__main__":
         pygame.HWSURFACE | pygame.DOUBLEBUF)
 
     cfg = yaml.safe_load(open("config_discrete.yaml", "r"))
-    env = CarlaEnv(cfg=cfg, host="intersection-driving-carla_server-1", tm_port=9020)
+    env = CarlaEnv(cfg=cfg, host="carla_server", tm_port=9020)
     obs, info = env.reset()
 
     try:
