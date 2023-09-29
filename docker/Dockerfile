@@ -66,6 +66,7 @@ RUN conda init bash && \
 RUN if [[ "$CARLA_VERSION" > "0.9.11" ]]; then \
     ${CONDA_DIR}/envs/$CONDA_ENV_NAME/bin/python -m pip install "carla==$CARLA_VERSION"; \
     else \
+    CARLA_VERSION=$(echo $CARLA_VERSION | sed 's/\.[^.]*$//') && \
     echo "export PYTHONPATH=$PYTHONPATH:/opt/carla/PythonAPI/carla/dist/carla-${CARLA_VERSION}-py3.7-linux-x86_64.egg" >> ~/.bashrc; \
     fi
 ENV DISPLAY=:1.0
