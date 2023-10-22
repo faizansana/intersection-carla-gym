@@ -30,7 +30,7 @@ nvidia-nccl-cu11==2.14.3
 nvidia-nvtx-cu11==11.7.91
 packaging==23.1
 pandas==2.0.3
-Pillow==10.0.0
+Pillow==10.0.1
 pygame==2.4.0
 pyparsing==3.0.9
 python-dateutil==2.8.2
