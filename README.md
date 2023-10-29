@@ -1,5 +1,7 @@
 # Intersection Environment for Training Reinforcement Learning Algorithms
 
+[![Push to Docker Hub](https://github.com/faizansana/intersection-carla-gym/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/faizansana/intersection-carla-gym/actions/workflows/docker-publish.yml)
+
 [OpenAI gym](https://github.com/openai/gym) and [Gymnasium](https://github.com/Farama-Foundation/Gymnasium) environment for [CARLA Simulator](https://carla.org/), particularly for a 4-way unsignalized intersection environment.
 
 # Getting Started
