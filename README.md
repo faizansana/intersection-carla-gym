@@ -67,7 +67,6 @@ The following are the requirements for running this repository using the provide
         target_speeds: [0, 3, 6, 9, 12] # For discrete speed control
         desired_speed: 12 # For continuous speed control
         dt: 0.05 
-        port: 2000 # Change this to match your server port
         render: false
         ego_vehicle_filter: "vehicle.lincoln*" # Vehicle to use for ego vehicle
         num_veh: 1 # Number of vehicles in each intersection except ego vehicle

@@ -33,7 +33,7 @@ class CarlaEnv(gym.Env):
 
     ACTIONS_INDEXES = {v: k for k, v in ACTIONS.items()}
 
-    def __init__(self, cfg: Dict, host: str, tm_port: int = 8000):
+    def __init__(self, cfg: Dict, host: str, port: int, tm_port: int = 8000):
         for k, v in cfg["env"].items():
             setattr(self, k, v)
         self.tm_port = helper.get_open_port()
@@ -66,7 +66,7 @@ class CarlaEnv(gym.Env):
             )
 
         # Connect to carla server and get world object
-        self._make_carla_client(host, self.port)
+        self._make_carla_client(host, port)
 
         # Create the ego vehicle blueprint
         self.ego_bp = self._create_vehicle_bluepprint(self.ego_vehicle_filter, color="49,8,8")
