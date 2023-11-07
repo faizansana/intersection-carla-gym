@@ -114,12 +114,20 @@ class CarlaEnv(gym.Env):
 
         # Make global plan based on start and end points
         global_planner_dao = GlobalRoutePlannerDAO(self.map, sampling_resolution=0.1)
-        global_planner = GlobalRoutePlanner(global_planner_dao)
-        global_planner.setup()
+        self.global_planner = GlobalRoutePlanner(global_planner_dao)
+        self.global_planner.setup()
         # Start and Destination
-        self.start = carla.Transform(carla.Location(x=84, y=-110, z=10), carla.Rotation(yaw=270))
-        self.dest = carla.Transform(carla.Location(x=49, y=-137), carla.Rotation())
-        self.waypoints = global_planner.trace_route(self.start.location, self.dest.location)
+        self.possible_start_positions = [
+            carla.Transform(carla.Location(x=84.8, y=-110, z=10), carla.Rotation(yaw=270)),  # Left lane
+            # carla.Transform(carla.Location(x=88, y=-110, z=10), carla.Rotation(yaw=270)),  # Right lane
+        ]
+        # TODO: Have different start positions for different routes
+        self.start = random.choice(self.possible_start_positions)
+        self.possible_destinations = [
+            carla.Transform(carla.Location(x=49, y=-137), carla.Rotation()),  # left turn
+            carla.Transform(carla.Location(x=84.8, y=-150), carla.Rotation(yaw=270)),  # straight
+            carla.Transform(carla.Location(x=110, y=-132.5), carla.Rotation(yaw=90))  # right turn
+        ]
 
         # Setup info variables
         self.isCollided = False
@@ -464,6 +472,10 @@ class CarlaEnv(gym.Env):
         return info_vec
 
     def reset(self, seed=None):
+        # Randomly select one of the destinations
+        self.dest = random.choice(self.possible_destinations)
+        self.waypoints = self.global_planner.trace_route(self.start.location, self.dest.location)
+
         # Obstacle sensor variables
         self.ego_obstacle_sensor = None
         self._closest_pedestrian_distance = MAX_VALUE
@@ -737,7 +749,7 @@ if __name__ == "__main__":
         pygame.HWSURFACE | pygame.DOUBLEBUF)
 
     cfg = yaml.safe_load(open("config_discrete.yaml", "r"))
-    env = CarlaEnv(cfg=cfg, host="carla_server", tm_port=9020)
+    env = CarlaEnv(cfg=cfg, host="carla_server", tm_port=9020, port=2000)
     obs, info = env.reset()
 
     try:
