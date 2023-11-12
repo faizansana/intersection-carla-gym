@@ -15,6 +15,7 @@ from gymnasium import spaces
 
 import util.carla_logger as carla_logger
 import util.misc as helper
+from util.plotting_udp_server import PlottingUDPServer
 from local_carla_agents.navigation.global_route_planner import GlobalRoutePlanner
 from local_carla_agents.navigation.global_route_planner_dao import GlobalRoutePlannerDAO
 from local_carla_agents.navigation.local_planner import LocalPlanner
@@ -33,10 +34,14 @@ class CarlaEnv(gym.Env):
 
     ACTIONS_INDEXES = {v: k for k, v in ACTIONS.items()}
 
-    def __init__(self, cfg: Dict, host: str, port: int, tm_port: int = 8000):
+    def __init__(self, cfg: Dict, host: str, port: int, udp_server: bool = False):
         for k, v in cfg["env"].items():
             setattr(self, k, v)
         self.tm_port = helper.get_open_port()
+        self.udp_server = udp_server
+        if udp_server:
+            udp_server_port = helper.get_open_port()
+            self.udp_server = PlottingUDPServer(port=udp_server_port)
         self.ego = None
         host_num = host.split("_")[-1]
         exp_name = cfg["exp_name"]
@@ -75,32 +80,19 @@ class CarlaEnv(gym.Env):
         self.collision_occured = False
         self.collision_bp = self.world.get_blueprint_library().find("sensor.other.collision")
 
-        # Obstacle sensor
-        self.obstacle_bp = self.world.get_blueprint_library().find("sensor.other.obstacle")
-        distance = max(self.pedestrian_proximity_threshold, self.vehicle_proximity_threshold) + 3
-        self.obstacle_bp.set_attribute("only_dynamics", "true")
-        self.obstacle_bp.set_attribute("debug_linetrace", "true")
-        self.obstacle_bp.set_attribute("distance", str(distance))
-        # Set hit radius based on ego_bp length
-        # TODO: Make the hit radius a parameter and do it based on car length
-        self.obstacle_bp.set_attribute("hit_radius", "1.5")
-
+        self._setup_obstacle_sensor_blueprint()
         # Add Top down Camera sensor
-        self.camera_img = np.zeros((self.CAM_RES, self.CAM_RES, 3), dtype=np.uint8)
-        self.camera_trans = carla.Transform(carla.Location(x=0.8, z=20), carla.Rotation(pitch=-90))
-        self.camera_bp = self.world.get_blueprint_library().find("sensor.camera.rgb")
-        # Modify the attributes of the blueprint to set image resolution and field of view.
-        self.camera_bp.set_attribute("image_size_x", str(self.CAM_RES))
-        self.camera_bp.set_attribute("image_size_y", str(self.CAM_RES))
-        self.camera_bp.set_attribute("fov", "110")
-        # Set the time in seconds between sensor captures
-        self.camera_bp.set_attribute("sensor_tick", "0.02")
+        self._setup_camera_sensor_blueprint()
+        self._imu_sensor_bp = self.world.get_blueprint_library().find("sensor.other.imu")
+        self._gns_sensor_bp = self.world.get_blueprint_library().find("sensor.other.gnss")
 
         # Record the time of total steps and resetting steps
         self.total_step = 0
 
         # A dict used for storing state data
         self.state_info = {}
+        self.imu_data = None
+        self.gnss_data = None
 
         # A list stores the ids for each episode
         self.actors = []
@@ -132,6 +124,27 @@ class CarlaEnv(gym.Env):
         # Setup info variables
         self.isCollided = False
         self.isSuccess = False
+
+    def _setup_camera_sensor_blueprint(self):
+        self.camera_img = np.zeros((self.CAM_RES, self.CAM_RES, 3), dtype=np.uint8)
+        self.camera_trans = carla.Transform(carla.Location(x=0.8, z=20), carla.Rotation(pitch=-90))
+        self.camera_bp = self.world.get_blueprint_library().find("sensor.camera.rgb")
+        # Modify the attributes of the blueprint to set image resolution and field of view.
+        self.camera_bp.set_attribute("image_size_x", str(self.CAM_RES))
+        self.camera_bp.set_attribute("image_size_y", str(self.CAM_RES))
+        self.camera_bp.set_attribute("fov", "110")
+        # Set the time in seconds between sensor captures
+        self.camera_bp.set_attribute("sensor_tick", "0.02")
+
+    def _setup_obstacle_sensor_blueprint(self):
+        self.obstacle_bp = self.world.get_blueprint_library().find("sensor.other.obstacle")
+        distance = max(self.pedestrian_proximity_threshold, self.vehicle_proximity_threshold) + 3
+        self.obstacle_bp.set_attribute("only_dynamics", "true")
+        self.obstacle_bp.set_attribute("debug_linetrace", "true")
+        self.obstacle_bp.set_attribute("distance", str(distance))
+        # Set hit radius based on ego_bp length
+        # TODO: Make the hit radius a parameter and do it based on car length
+        self.obstacle_bp.set_attribute("hit_radius", "1.5")
 
     def _normalize_reward_weights(self):
         # Find the max negative reward in the reward weights
@@ -481,8 +494,12 @@ class CarlaEnv(gym.Env):
         self._closest_pedestrian_distance = MAX_VALUE
         self._closest_vehicle_distance = MAX_VALUE
 
+        # Reset sensors
         self.ego_collision_sensor = None
         self.camera_sensor = None
+        self.imu_sensor = None
+        self.gnss_sensor = None
+        # Reset state info
         self.collision_occured = False
         self.pedestrian_collision = False
 
@@ -505,13 +522,12 @@ class CarlaEnv(gym.Env):
         self.routeplanner.set_global_plan(self.waypoints)
         # self.waypoints, _, _ = self.routeplanner.run_step()
 
-        # Add collision sensor
-        self.ego_collision_sensor = self.world.spawn_actor(self.collision_bp, carla.Transform(), attach_to=self.ego)
-        self.ego_collision_sensor.listen(lambda event: collision_event(event))
+        # Sensor callbacks
+        def _get_imu(imu_data: carla.IMUMeasurement):
+            self.imu_data = imu_data
 
-        # Add obstacle sensor
-        self.ego_obstacle_sensor = self.world.spawn_actor(self.obstacle_bp, carla.Transform(), attach_to=self.ego)
-        self.ego_obstacle_sensor.listen(lambda event: obstacle_event(event))
+        def _get_gps(gnss_data: carla.GnssMeasurement):
+            self.gnss_data = gnss_data
 
         def obstacle_event(event):
             # Check if the obstacle is a pedestrian
@@ -527,11 +543,27 @@ class CarlaEnv(gym.Env):
             if event.other_actor.type_id.startswith("walker"):
                 self.pedestrian_collision = True
 
-        self.camera_sensor = self.world.spawn_actor(self.camera_bp, self.camera_trans, attach_to=self.ego)
-        self.camera_sensor.listen(lambda data: get_camera_img(data))
-
         def get_camera_img(data):
             self.og_camera_img = data
+
+        # Add collision sensor
+        self.ego_collision_sensor = self.world.spawn_actor(self.collision_bp, carla.Transform(), attach_to=self.ego)
+        self.ego_collision_sensor.listen(lambda event: collision_event(event))
+
+        # Add obstacle sensor
+        self.ego_obstacle_sensor = self.world.spawn_actor(self.obstacle_bp, carla.Transform(), attach_to=self.ego)
+        self.ego_obstacle_sensor.listen(lambda event: obstacle_event(event))
+
+        # Add GNSS sensors
+        self.gnss_sensor = self.world.spawn_actor(self._gns_sensor_bp, carla.Transform(), attach_to=self.ego)
+        self.gnss_sensor.listen(lambda gnss_data: _get_gps(gnss_data))
+
+        # Add IMU sensors
+        self.imu_sensor = self.world.spawn_actor(self._imu_sensor_bp, carla.Transform(), attach_to=self.ego)
+        self.imu_sensor.listen(lambda imu_data: _get_imu(imu_data))
+
+        self.camera_sensor = self.world.spawn_actor(self.camera_bp, self.camera_trans, attach_to=self.ego)
+        self.camera_sensor.listen(lambda data: get_camera_img(data))
 
         # Update timesteps
         self.time_step = 1
@@ -669,6 +701,11 @@ class CarlaEnv(gym.Env):
 
             return self.target_speeds[self.speed_index]
 
+    def _update_udp_server(self):
+        self.udp_server.update_GNSS(self.gnss_data)
+        self.udp_server.update_IMU(self.imu_data)
+        self.udp_server.send_update()
+
     def step(self, action: np.ndarray) -> Tuple[np.ndarray, float, bool, Dict]:
 
         # Reset closest pedestrian and vehicle variables
@@ -682,6 +719,8 @@ class CarlaEnv(gym.Env):
         self.routeplanner.set_speed(speed_in_km_h)
         control = self.routeplanner.run_step(debug=True)
         self.ego.apply_control(control)
+        if self.udp_server:
+            self._update_udp_server()
 
         self.world.tick()
 
@@ -716,7 +755,7 @@ class CarlaEnv(gym.Env):
     def _clear_actors_batch(self):
         
         # Destroy all sensors and ai walker
-        self._clear_actor_filters(["controller.ai.walker", "sensor.other.collision", "sensor.camera.rgb", "sensor.other.obstacle"])
+        self._clear_actor_filters(["controller.ai.walker", "sensor.other.collision", "sensor.camera.rgb", "sensor.other.obstacle", "sensor.other.gnss", "sensor.other.imu"])
         
         batch = []
         for peds in self.peds:
@@ -749,7 +788,7 @@ if __name__ == "__main__":
         pygame.HWSURFACE | pygame.DOUBLEBUF)
 
     cfg = yaml.safe_load(open("config_discrete.yaml", "r"))
-    env = CarlaEnv(cfg=cfg, host="carla_server", tm_port=9020, port=2000)
+    env = CarlaEnv(cfg=cfg, host="carla_server", port=2000, udp_server=True)
     obs, info = env.reset()
 
     try:
