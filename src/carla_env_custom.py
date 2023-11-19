@@ -35,18 +35,22 @@ class CarlaEnv(gym.Env):
     ACTIONS_INDEXES = {v: k for k, v in ACTIONS.items()}
 
     def __init__(self, cfg: Dict, host: str, port: int, udp_server: bool = False):
+
+        host_num = host.split("_")[-1]
+        exp_name = cfg["exp_name"]
+        outdir = cfg["output_dir"]
+        self.logger = carla_logger.setup_carla_logger(output_dir=outdir, exp_name=exp_name, rank=host_num)
+
         for k, v in cfg["env"].items():
             setattr(self, k, v)
         self.tm_port = helper.get_open_port()
         self.udp_server = udp_server
         if udp_server:
             udp_server_port = helper.get_open_port()
+            self.logger.info(f"UDP server port: {udp_server_port}")
             self.udp_server = PlottingUDPServer(port=udp_server_port)
         self.ego = None
-        host_num = host.split("_")[-1]
-        exp_name = cfg["exp_name"]
-        outdir = cfg["output_dir"]
-        self.logger = carla_logger.setup_carla_logger(output_dir=outdir, exp_name=exp_name, rank=host_num)
+
         self.logger.info(f"Env running on server {host}")
         self._normalize_reward_weights()
 
@@ -701,9 +705,10 @@ class CarlaEnv(gym.Env):
 
             return self.target_speeds[self.speed_index]
 
-    def _update_udp_server(self):
+    def _update_udp_server(self, control: carla.VehicleControl):
         self.udp_server.update_GNSS(self.gnss_data)
         self.udp_server.update_IMU(self.imu_data)
+        self.udp_server.update_control(control)
         self.udp_server.send_update()
 
     def step(self, action: np.ndarray) -> Tuple[np.ndarray, float, bool, Dict]:
@@ -720,7 +725,7 @@ class CarlaEnv(gym.Env):
         control = self.routeplanner.run_step(debug=True)
         self.ego.apply_control(control)
         if self.udp_server:
-            self._update_udp_server()
+            self._update_udp_server(control)
 
         self.world.tick()
 
