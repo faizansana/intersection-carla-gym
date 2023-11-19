@@ -51,8 +51,31 @@ class PlottingUDPServer():
                 "throttle": 0.0,
                 "brake": 0.0
             },
-            # Speed
-            "speed": 0.0
+            # Vehicle
+            "vehicle": {
+                "speed": 0.0,
+                "velocity": {
+                    "x": 0.0,
+                    "y": 0.0,
+                    "z": 0.0
+                },
+                "acceleration": {
+                    "x": 0.0,
+                    "y": 0.0,
+                    "z": 0.0
+                },
+                "orientation": {
+                    "roll": 0.0,
+                    "pitch": 0.0,
+                    "yaw": 0.0
+                },
+                "angular_velocity": {
+                    "x": 0.0,
+                    "y": 0.0,
+                    "z": 0.0
+                }
+            }
+
         }
 
         # Initialize logger
@@ -79,6 +102,43 @@ class PlottingUDPServer():
         self.data['control']['steering'] = control.steer
         self.data['control']['throttle'] = control.throttle
         self.data['control']['brake'] = control.brake
+
+    def update_speed(self, velocity: carla.Vector3D):
+        # Calculate speed
+        speed = (velocity.x**2 + velocity.y**2 + velocity.z**2)**0.5
+        # Update speed data
+        self.data["vehicle"]['speed'] = speed
+
+    def update_ego_vehicle(self, ego_vehicle: carla.Vehicle):
+        # Update vehicle data
+        velocity = ego_vehicle.get_velocity()
+        self.data["vehicle"]["velocity"] = {
+            "x": velocity.x,
+            "y": velocity.y,
+            "z": velocity.z
+        }
+        self.update_speed(ego_vehicle.get_velocity())
+
+        acceleration = ego_vehicle.get_acceleration()
+        self.data["vehicle"]["acceleration"] = {
+            "x": acceleration.x,
+            "y": acceleration.y,
+            "z": acceleration.z
+        }
+
+        orientation = ego_vehicle.get_transform().rotation
+        self.data["vehicle"]["orientation"] = {
+            "roll": orientation.roll,
+            "pitch": orientation.pitch,
+            "yaw": orientation.yaw
+        }
+
+        angular_velocity = ego_vehicle.get_angular_velocity()
+        self.data["vehicle"]["angular_velocity"] = {
+            "x": angular_velocity.x,
+            "y": angular_velocity.y,
+            "z": angular_velocity.z
+        }
 
     def send_update(self):
         # Update timestamp

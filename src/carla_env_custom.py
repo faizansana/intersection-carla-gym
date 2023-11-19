@@ -558,13 +558,14 @@ class CarlaEnv(gym.Env):
         self.ego_obstacle_sensor = self.world.spawn_actor(self.obstacle_bp, carla.Transform(), attach_to=self.ego)
         self.ego_obstacle_sensor.listen(lambda event: obstacle_event(event))
 
-        # Add GNSS sensors
-        self.gnss_sensor = self.world.spawn_actor(self._gns_sensor_bp, carla.Transform(), attach_to=self.ego)
-        self.gnss_sensor.listen(lambda gnss_data: _get_gps(gnss_data))
+        if self.udp_server:
+            # Add GNSS sensors
+            self.gnss_sensor = self.world.spawn_actor(self._gns_sensor_bp, carla.Transform(), attach_to=self.ego)
+            self.gnss_sensor.listen(lambda gnss_data: _get_gps(gnss_data))
 
-        # Add IMU sensors
-        self.imu_sensor = self.world.spawn_actor(self._imu_sensor_bp, carla.Transform(), attach_to=self.ego)
-        self.imu_sensor.listen(lambda imu_data: _get_imu(imu_data))
+            # Add IMU sensors
+            self.imu_sensor = self.world.spawn_actor(self._imu_sensor_bp, carla.Transform(), attach_to=self.ego)
+            self.imu_sensor.listen(lambda imu_data: _get_imu(imu_data))
 
         self.camera_sensor = self.world.spawn_actor(self.camera_bp, self.camera_trans, attach_to=self.ego)
         self.camera_sensor.listen(lambda data: get_camera_img(data))
@@ -709,6 +710,7 @@ class CarlaEnv(gym.Env):
         self.udp_server.update_GNSS(self.gnss_data)
         self.udp_server.update_IMU(self.imu_data)
         self.udp_server.update_control(control)
+        self.udp_server.update_ego_vehicle(self.ego)
         self.udp_server.send_update()
 
     def step(self, action: np.ndarray) -> Tuple[np.ndarray, float, bool, Dict]:
