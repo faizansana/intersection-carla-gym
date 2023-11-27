@@ -10,7 +10,10 @@ ARG CARLA_VERSION=0.9.13
 
 ENV DEBIAN_FRONTEND noninteractive
 ENV CARLA_VERSION $CARLA_VERSION
-RUN apt-get update && apt-get install -y sudo curl wget git python3-venv iputils-ping
+RUN apt-get update && \
+    apt-get install -y sudo curl wget git python3-venv iputils-ping && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
 
 # Add a docker user so we that created files in the docker container are owned by a non-root user
 RUN addgroup --gid 1000 docker && \
@@ -28,10 +31,11 @@ RUN USER=docker && \
     printf "user: $USER\ngroup: $GROUP\npaths:\n  - /home/docker/" > /etc/fixuid/config.yml
 
 # Install vnc server
-USER root:root
-RUN apt-get update && apt-get install -y lxde x11vnc xvfb mesa-utils && apt-get purge -y light-locker
-RUN apt-get install -y supervisor
-EXPOSE 5900
+RUN apt-get update && \
+    apt-get install -y lxde x11vnc xvfb mesa-utils supervisor && \
+    apt-get purge -y light-locker && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
 
 COPY --chown=docker ./supervisord.conf /etc/supervisor/supervisord.conf
 RUN chown -R docker:docker /etc/supervisor
@@ -39,7 +43,7 @@ RUN chmod 777 /var/log/supervisor/
 
 COPY --from=carla /home/carla/PythonAPI /opt/carla/PythonAPI
 
-# Install miniconda
+# Setup python environment
 USER docker:docker
 ENV SHELL=/bin/bash
 ENV CARLA_VERSION ${CARLA_VERSION:?}
