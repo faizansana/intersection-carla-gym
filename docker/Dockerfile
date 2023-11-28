@@ -3,7 +3,7 @@ ARG CUDA_VERSION=11.8.0
 FROM carlasim/carla:${CARLA_VERSION} AS carla
 
 ARG CUDA_VERSION=11.8.0
-FROM nvidia/cuda:${CUDA_VERSION}-base-ubuntu20.04 AS base
+FROM nvidia/cuda:${CUDA_VERSION}-base-ubuntu22.04 AS base
 SHELL [ "/bin/bash", "-c" ]
 
 ARG CARLA_VERSION=0.9.13
