@@ -11,7 +11,11 @@ ARG CARLA_VERSION=0.9.13
 ENV DEBIAN_FRONTEND noninteractive
 ENV CARLA_VERSION $CARLA_VERSION
 RUN apt-get update && \
-    apt-get install -y sudo curl wget git python3-venv iputils-ping && \
+    apt-get install software-properties-common -y && \
+    # Needed for installing python3.8 in ubuntu 22.04
+    add-apt-repository ppa:deadsnakes/ppa -y && \
+    apt-get update && \
+    apt-get install -y sudo curl wget git python3.8 python3.8-venv iputils-ping && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
