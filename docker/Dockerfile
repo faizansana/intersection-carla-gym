@@ -55,7 +55,7 @@ ENV PYTHON_VENV_NAME custom_carla_gym
 
 COPY --chown=docker:docker ./requirements.txt /tmp
 WORKDIR /home/docker
-RUN python3 -m venv $PYTHON_VENV_NAME && \
+RUN python3.8 -m venv $PYTHON_VENV_NAME && \
     source $PYTHON_VENV_NAME/bin/activate && \
     pip install --upgrade pip && \
     pip install --no-cache-dir -r /tmp/requirements.txt && \
