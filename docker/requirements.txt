@@ -4,7 +4,7 @@ contourpy==1.1.0
 cycler==0.11.0
 Farama-Notifications==0.0.4
 filelock==3.12.2
-fonttools==4.41.1
+fonttools==4.43.0
 gymnasium==0.28.1
 importlib-metadata==6.6.0
 importlib-resources==6.0.0
