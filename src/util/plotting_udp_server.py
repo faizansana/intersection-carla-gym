@@ -36,8 +36,16 @@ class PlottingUDPServer():
             "timestamp": 0.0,
             # IMU data
             "IMU": {
-                "accelerometer": [0.0, 0.0, 0.0],
-                "gyroscope": [0.0, 0.0, 0.0]
+                "accelerometer": {
+                    "x": 0.0,
+                    "y": 0.0,
+                    "z": 0.0
+                },
+                "gyroscope": {
+                    "x": 0.0,
+                    "y": 0.0,
+                    "z": 0.0
+                }
             },
             # GNSS data
             "GNSS": {
@@ -88,8 +96,13 @@ class PlottingUDPServer():
 
     def update_IMU(self, acc_gyro: carla.IMUMeasurement):
         # Update IMU data
-        self.data['IMU']['accelerometer'] = acc_gyro.accelerometer.x, acc_gyro.accelerometer.y, acc_gyro.accelerometer.z
-        self.data['IMU']['gyroscope'] = acc_gyro.gyroscope.x, acc_gyro.gyroscope.y, acc_gyro.gyroscope.z
+        self.data['IMU']['accelerometer']["x"] = acc_gyro.accelerometer.x
+        self.data['IMU']['accelerometer']["y"] = acc_gyro.accelerometer.y
+        self.data['IMU']['accelerometer']["y"] = acc_gyro.accelerometer.z
+
+        self.data['IMU']['gyroscope']["x"] = acc_gyro.gyroscope.x
+        self.data['IMU']['gyroscope']["y"] = acc_gyro.gyroscope.y
+        self.data['IMU']['gyroscope']["z"] = acc_gyro.gyroscope.z
 
     def update_GNSS(self, gnss):
         # Update GNSS data
