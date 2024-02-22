@@ -2,9 +2,19 @@ name: Push to Docker Hub
 
 on:
   push:
+    branches:
+      - "main"
     paths:
       - "docker/**"
       - ".github/workflows/docker-publish.yml"
+  pull_request:
+    paths:
+      - "docker/**"
+      - ".github/workflows/docker-publish.yml"
+
+concurrency:
+  group: ${{ github.ref }}-${{ github.workflow }}
+  cancel-in-progress: true
 
 jobs:
   build-and-publish:
