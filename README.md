@@ -128,6 +128,11 @@ The following are the requirements for running this repository using the provide
                     obs, info = env.reset()
     ```
 
+A demo video of the environment with *num_veh* set to 1 and *num_ped* set to 2 is shown below.
+
+https://github.com/faizansana/intersection-carla-gym/assets/64595558/79f13615-291d-4fd0-aac9-2ecd31842c38
+
+
 
 
 
