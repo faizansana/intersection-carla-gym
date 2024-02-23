@@ -132,6 +132,12 @@ A demo video of the environment with *num_veh* set to 1 and *num_ped* set to 2 i
 
 https://github.com/faizansana/intersection-carla-gym/assets/64595558/79f13615-291d-4fd0-aac9-2ecd31842c38
 
+The following video shows interfacing with [PlotJuggler](https://github.com/facontidavide/PlotJuggler). 26 values are available to be viewed within PlotJuggler.
+
+https://github.com/faizansana/intersection-carla-gym/assets/64595558/425d7c37-3e16-46a0-90ad-c53f3d67048a
+
+
+
 
 
 
