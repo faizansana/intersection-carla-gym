@@ -54,12 +54,20 @@ ENV CARLA_VERSION ${CARLA_VERSION:?}
 ENV PYTHON_VENV_NAME custom_carla_gym
 
 COPY --chown=docker:docker ./requirements.txt /tmp
+
+USER root:root
 WORKDIR /home/docker
 RUN python3.8 -m venv $PYTHON_VENV_NAME && \
     source $PYTHON_VENV_NAME/bin/activate && \
     pip install --upgrade pip && \
-    pip install --no-cache-dir -r /tmp/requirements.txt && \
-    echo "source /home/docker/$PYTHON_VENV_NAME/bin/activate" >> ~/.bashrc
+    pip install --no-cache-dir -r /tmp/requirements.txt 
+
+USER docker:docker
+RUN echo "source /home/docker/$PYTHON_VENV_NAME/bin/activate" >> ~/.bashrc
+# Add PlotJuggler AppImage
+RUN wget -O PlotJuggler-3.5.0.AppImage https://github.com/facontidavide/PlotJuggler/releases/download/3.5.0/PlotJuggler-3.5.0-x86_64.AppImage && \
+    chmod +x PlotJuggler-3.5.0.AppImage && \
+    ./PlotJuggler-3.5.0.AppImage --appimage-extract
 
 # Install carla python api if carla v0.9.12 or greater, otherwise add the egg to the python path
 RUN if [[ "$CARLA_VERSION" > "0.9.11" ]]; then \
