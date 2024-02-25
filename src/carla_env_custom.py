@@ -16,9 +16,9 @@ from gymnasium import spaces
 import util.carla_logger as carla_logger
 import util.misc as helper
 from util.plotting_udp_server import PlottingUDPServer
-from local_carla_agents.navigation.global_route_planner import GlobalRoutePlanner
-from local_carla_agents.navigation.global_route_planner_dao import GlobalRoutePlannerDAO
-from local_carla_agents.navigation.local_planner import LocalPlanner
+from agents.navigation.global_route_planner import GlobalRoutePlanner
+from agents.navigation.global_route_planner_dao import GlobalRoutePlannerDAO
+from agents.navigation.local_planner import LocalPlanner
 
 MAX_VALUE = 1000000
 
