@@ -29,7 +29,7 @@ CARLA_QUALITY=${CARLA_QUALITY:-"Low"}
 GPU_ID=$(nvidia-smi --query-gpu=index,memory.used --format=csv,noheader,nounits | sort -n -k2 | awk -F', ' '{print $1}' | head -n 1)
 
 ## -------------------------- CUDA Version ------------------------
-CUDA_VERSION=${CUDA_VERSION:-"11.8.0"}
+CUDA_VERSION=${CUDA_VERSION:-"12.0.0"}
 
 echo "FIXUID=$FIXUID" >> "$SCRIPT_DIR/.env"
 echo "FIXGID=$FIXGID" >> "$SCRIPT_DIR/.env"
