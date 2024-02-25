@@ -62,6 +62,15 @@ RUN python3.8 -m venv $PYTHON_VENV_NAME && \
     pip install --upgrade pip && \
     pip install --no-cache-dir -r /tmp/requirements.txt 
 
+# Install carla python api if carla v0.9.12 or greater, otherwise add the egg to the python path
+RUN if [[ "$CARLA_VERSION" > "0.9.11" ]]; then \
+    source $PYTHON_VENV_NAME/bin/activate && \
+    python -m pip install "carla==$CARLA_VERSION"; \
+    else \
+    CARLA_VERSION=$(echo $CARLA_VERSION | sed 's/\.[^.]*$//') && \
+    echo "export PYTHONPATH=$PYTHONPATH:/opt/carla/PythonAPI/carla/dist/carla-${CARLA_VERSION}-py3.7-linux-x86_64.egg" >> /home/docker/.bashrc; \
+    fi
+
 USER docker:docker
 RUN echo "source /home/docker/$PYTHON_VENV_NAME/bin/activate" >> ~/.bashrc
 # Add PlotJuggler AppImage
@@ -69,14 +78,6 @@ RUN wget -O PlotJuggler-3.5.0.AppImage https://github.com/facontidavide/PlotJugg
     chmod +x PlotJuggler-3.5.0.AppImage && \
     ./PlotJuggler-3.5.0.AppImage --appimage-extract
 
-# Install carla python api if carla v0.9.12 or greater, otherwise add the egg to the python path
-RUN if [[ "$CARLA_VERSION" > "0.9.11" ]]; then \
-    source $PYTHON_VENV_NAME/bin/activate && \
-    python -m pip install "carla==$CARLA_VERSION"; \
-    else \
-    CARLA_VERSION=$(echo $CARLA_VERSION | sed 's/\.[^.]*$//') && \
-    echo "export PYTHONPATH=$PYTHONPATH:/opt/carla/PythonAPI/carla/dist/carla-${CARLA_VERSION}-py3.7-linux-x86_64.egg" >> ~/.bashrc; \
-    fi
 # Add CARLA PythonAPI to the python path
 RUN echo "export PYTHONPATH=$PYTHONPATH:/opt/carla/PythonAPI/carla" >> ~/.bashrc
 ENV DISPLAY=:1.0
