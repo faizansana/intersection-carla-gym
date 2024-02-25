@@ -77,6 +77,8 @@ RUN if [[ "$CARLA_VERSION" > "0.9.11" ]]; then \
     CARLA_VERSION=$(echo $CARLA_VERSION | sed 's/\.[^.]*$//') && \
     echo "export PYTHONPATH=$PYTHONPATH:/opt/carla/PythonAPI/carla/dist/carla-${CARLA_VERSION}-py3.7-linux-x86_64.egg" >> ~/.bashrc; \
     fi
+# Add CARLA PythonAPI to the python path
+RUN echo "export PYTHONPATH=$PYTHONPATH:/opt/carla/PythonAPI/carla" >> ~/.bashrc
 ENV DISPLAY=:1.0
 WORKDIR /home/docker
 ENTRYPOINT ["fixuid"]
