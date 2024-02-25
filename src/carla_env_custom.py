@@ -17,7 +17,6 @@ import util.carla_logger as carla_logger
 import util.misc as helper
 from util.plotting_udp_server import PlottingUDPServer
 from agents.navigation.global_route_planner import GlobalRoutePlanner
-from agents.navigation.global_route_planner_dao import GlobalRoutePlannerDAO
 from agents.navigation.local_planner import LocalPlanner
 
 MAX_VALUE = 1000000
@@ -109,9 +108,7 @@ class CarlaEnv(gym.Env):
         self.og_camera_img = None
 
         # Make global plan based on start and end points
-        global_planner_dao = GlobalRoutePlannerDAO(self.map, sampling_resolution=0.1)
-        self.global_planner = GlobalRoutePlanner(global_planner_dao)
-        self.global_planner.setup()
+        self.global_planner = GlobalRoutePlanner(self.map, sampling_resolution=0.1)
         # Start and Destination
         self.possible_start_positions = [
             carla.Transform(carla.Location(x=84.8, y=-110, z=10), carla.Rotation(yaw=270)),  # Left lane
@@ -121,7 +118,7 @@ class CarlaEnv(gym.Env):
         self.start = random.choice(self.possible_start_positions)
         self.possible_destinations = [
             carla.Transform(carla.Location(x=49, y=-137), carla.Rotation()),  # left turn
-            carla.Transform(carla.Location(x=84.8, y=-150), carla.Rotation(yaw=270)),  # straight
+            carla.Transform(carla.Location(x=84.8, y=-170), carla.Rotation(yaw=270)),  # straight
             carla.Transform(carla.Location(x=110, y=-132.5), carla.Rotation(yaw=90))  # right turn
         ]
 
@@ -521,10 +518,8 @@ class CarlaEnv(gym.Env):
         # Spawn pedestrians
         self._spawn_surrounding_pedestrians()
 
-        # self.routeplanner = RoutePlanner(self.ego, self.max_waypt)
-        self.routeplanner = LocalPlanner(self.ego)
+        self.routeplanner = LocalPlanner(self.ego, map_inst=self.map)
         self.routeplanner.set_global_plan(self.waypoints)
-        # self.waypoints, _, _ = self.routeplanner.run_step()
 
         # Sensor callbacks
         def _get_imu(imu_data: carla.IMUMeasurement):
