@@ -121,7 +121,7 @@ class CarlaEnv(gym.Env):
         self.start = random.choice(self.possible_start_positions)
         self.possible_destinations = [
             carla.Transform(carla.Location(x=49, y=-137), carla.Rotation()),  # left turn
-            carla.Transform(carla.Location(x=84.8, y=-150), carla.Rotation(yaw=270)),  # straight
+            carla.Transform(carla.Location(x=84.8, y=-170), carla.Rotation(yaw=270)),  # straight
             carla.Transform(carla.Location(x=110, y=-132.5), carla.Rotation(yaw=90))  # right turn
         ]
 
