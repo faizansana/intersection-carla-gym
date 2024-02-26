@@ -7,7 +7,7 @@ import time
 import carla
 
 
-class PlottingUDPServer():
+class PlottingUDPServer:
     """
     A class for sending IMU and GNSS data over UDP.
 
@@ -36,91 +36,60 @@ class PlottingUDPServer():
             "timestamp": 0.0,
             # IMU data
             "IMU": {
-                "accelerometer": {
-                    "x": 0.0,
-                    "y": 0.0,
-                    "z": 0.0
-                },
-                "gyroscope": {
-                    "x": 0.0,
-                    "y": 0.0,
-                    "z": 0.0
-                }
+                "accelerometer": {"x": 0.0, "y": 0.0, "z": 0.0},
+                "gyroscope": {"x": 0.0, "y": 0.0, "z": 0.0},
             },
             # GNSS data
-            "GNSS": {
-                "latitude": 0.0,
-                "longitude": 0.0,
-                "altitude": 0.0
-            },
+            "GNSS": {"latitude": 0.0, "longitude": 0.0, "altitude": 0.0},
             # Control
-            "control": {
-                "steering": 0.0,
-                "throttle": 0.0,
-                "brake": 0.0
-            },
+            "control": {"steering": 0.0, "throttle": 0.0, "brake": 0.0},
             # Vehicle
             "vehicle": {
                 "speed": 0.0,
-                "velocity": {
-                    "x": 0.0,
-                    "y": 0.0,
-                    "z": 0.0
-                },
-                "acceleration": {
-                    "x": 0.0,
-                    "y": 0.0,
-                    "z": 0.0
-                },
-                "orientation": {
-                    "roll": 0.0,
-                    "pitch": 0.0,
-                    "yaw": 0.0
-                },
-                "angular_velocity": {
-                    "x": 0.0,
-                    "y": 0.0,
-                    "z": 0.0
-                }
-            }
-
+                "velocity": {"x": 0.0, "y": 0.0, "z": 0.0},
+                "acceleration": {"x": 0.0, "y": 0.0, "z": 0.0},
+                "orientation": {"roll": 0.0, "pitch": 0.0, "yaw": 0.0},
+                "angular_velocity": {"x": 0.0, "y": 0.0, "z": 0.0},
+            },
         }
 
         # Initialize logger
         self.logger = logging.getLogger(__name__)
         self.logger.setLevel(logging.INFO)
-        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        formatter = logging.Formatter(
+            "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+        )
         stream_handler = logging.StreamHandler()
         stream_handler.setFormatter(formatter)
         self.logger.addHandler(stream_handler)
 
     def update_IMU(self, acc_gyro: carla.IMUMeasurement):
         # Update IMU data
-        self.data['IMU']['accelerometer']["x"] = acc_gyro.accelerometer.x
-        self.data['IMU']['accelerometer']["y"] = acc_gyro.accelerometer.y
-        self.data['IMU']['accelerometer']["y"] = acc_gyro.accelerometer.z
+        self.data["IMU"]["accelerometer"]["x"] = acc_gyro.accelerometer.x
+        self.data["IMU"]["accelerometer"]["y"] = acc_gyro.accelerometer.y
+        self.data["IMU"]["accelerometer"]["y"] = acc_gyro.accelerometer.z
 
-        self.data['IMU']['gyroscope']["x"] = acc_gyro.gyroscope.x
-        self.data['IMU']['gyroscope']["y"] = acc_gyro.gyroscope.y
-        self.data['IMU']['gyroscope']["z"] = acc_gyro.gyroscope.z
+        self.data["IMU"]["gyroscope"]["x"] = acc_gyro.gyroscope.x
+        self.data["IMU"]["gyroscope"]["y"] = acc_gyro.gyroscope.y
+        self.data["IMU"]["gyroscope"]["z"] = acc_gyro.gyroscope.z
 
     def update_GNSS(self, gnss):
         # Update GNSS data
-        self.data['GNSS']['latitude'] = gnss.latitude
-        self.data['GNSS']['longitude'] = gnss.longitude
-        self.data['GNSS']['altitude'] = gnss.altitude
+        self.data["GNSS"]["latitude"] = gnss.latitude
+        self.data["GNSS"]["longitude"] = gnss.longitude
+        self.data["GNSS"]["altitude"] = gnss.altitude
 
     def update_control(self, control: carla.VehicleControl):
         # Update control data
-        self.data['control']['steering'] = control.steer
-        self.data['control']['throttle'] = control.throttle
-        self.data['control']['brake'] = control.brake
+        self.data["control"]["steering"] = control.steer
+        self.data["control"]["throttle"] = control.throttle
+        self.data["control"]["brake"] = control.brake
 
     def update_speed(self, velocity: carla.Vector3D):
         # Calculate speed
-        speed = (velocity.x**2 + velocity.y**2 + velocity.z**2)**0.5
+        speed = (velocity.x**2 + velocity.y**2 + velocity.z**2) ** 0.5
         # Update speed data
-        self.data["vehicle"]['speed'] = speed
+        self.data["vehicle"]["speed"] = speed
 
     def update_ego_vehicle(self, ego_vehicle: carla.Vehicle):
         # Update vehicle data
@@ -128,7 +97,7 @@ class PlottingUDPServer():
         self.data["vehicle"]["velocity"] = {
             "x": velocity.x,
             "y": velocity.y,
-            "z": velocity.z
+            "z": velocity.z,
         }
         self.update_speed(ego_vehicle.get_velocity())
 
@@ -136,26 +105,26 @@ class PlottingUDPServer():
         self.data["vehicle"]["acceleration"] = {
             "x": acceleration.x,
             "y": acceleration.y,
-            "z": acceleration.z
+            "z": acceleration.z,
         }
 
         orientation = ego_vehicle.get_transform().rotation
         self.data["vehicle"]["orientation"] = {
             "roll": orientation.roll,
             "pitch": orientation.pitch,
-            "yaw": orientation.yaw
+            "yaw": orientation.yaw,
         }
 
         angular_velocity = ego_vehicle.get_angular_velocity()
         self.data["vehicle"]["angular_velocity"] = {
             "x": angular_velocity.x,
             "y": angular_velocity.y,
-            "z": angular_velocity.z
+            "z": angular_velocity.z,
         }
 
     def send_update(self):
         # Update timestamp
-        self.data['timestamp'] = time.time()
+        self.data["timestamp"] = time.time()
 
         # Send data
         try:

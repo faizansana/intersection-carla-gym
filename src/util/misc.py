@@ -1,9 +1,9 @@
 #!/usr/bin/env python
+import math
 import socket
 from typing import List
 
 import carla
-import math
 import numpy as np
 
 
@@ -21,8 +21,9 @@ def vec_decompose(vec_to_be_decomposed, direction):
     assert vec_to_be_decomposed.shape[0] == 2, direction.shape[0] == 2
     lon_scalar = np.inner(vec_to_be_decomposed, direction)
     lat_vec = vec_to_be_decomposed - lon_scalar * direction
-    lat_scalar = np.linalg.norm(lat_vec) * np.sign(lat_vec[0] * direction[1] -
-                                                   lat_vec[1] * direction[0])
+    lat_scalar = np.linalg.norm(lat_vec) * np.sign(
+        lat_vec[0] * direction[1] - lat_vec[1] * direction[0]
+    )
     return np.array([lon_scalar, lat_scalar], dtype=np.float32)
 
 
@@ -51,7 +52,7 @@ def get_speed(vehicle):
     :return: speed as a float in Kmh
     """
     vel = vehicle.get_velocity()
-    return 3.6 * math.sqrt(vel.x ** 2 + vel.y ** 2 + vel.z ** 2)
+    return 3.6 * math.sqrt(vel.x**2 + vel.y**2 + vel.z**2)
 
 
 def get_pos(vehicle):
@@ -92,8 +93,9 @@ def get_local_pose(global_pose, ego_pose):
     """
     x, y, yaw = global_pose
     ego_x, ego_y, ego_yaw = ego_pose
-    R = np.array([[np.cos(ego_yaw), np.sin(ego_yaw)],
-                  [-np.sin(ego_yaw), np.cos(ego_yaw)]])
+    R = np.array(
+        [[np.cos(ego_yaw), np.sin(ego_yaw)], [-np.sin(ego_yaw), np.cos(ego_yaw)]]
+    )
     vec_local = R.dot(np.array([x - ego_x, y - ego_y]))
     yaw_local = yaw - ego_yaw
     local_pose = (vec_local[0], vec_local[1], yaw_local)
@@ -111,19 +113,21 @@ def get_lane_dis(waypoints, x, y):
     dis_min = 1000
     waypt = waypoints[0]
     for pt in waypoints:
-        d = np.sqrt((x-pt[0])**2 + (y-pt[1])**2)
+        d = np.sqrt((x - pt[0]) ** 2 + (y - pt[1]) ** 2)
         if d < dis_min:
             dis_min = d
             waypt = pt
     vec = np.array([x - waypt[0], y - waypt[1]])
     lv = np.linalg.norm(np.array(vec))
-    w = np.array([np.cos(waypt[2]/180*np.pi), np.sin(waypt[2]/180*np.pi)])
-    cross = np.cross(w, vec/lv)
-    dis = - lv * cross
+    w = np.array([np.cos(waypt[2] / 180 * np.pi), np.sin(waypt[2] / 180 * np.pi)])
+    cross = np.cross(w, vec / lv)
+    dis = -lv * cross
     return dis, w
 
 
-def is_within_distance_ahead(target_location, current_location, orientation, max_distance):
+def is_within_distance_ahead(
+    target_location, current_location, orientation, max_distance
+):
     """
     Check if a target object is within a certain distance in front of a reference object.
 
@@ -133,14 +137,19 @@ def is_within_distance_ahead(target_location, current_location, orientation, max
     :param max_distance: maximum allowed distance
     :return: True if target object is within max_distance ahead of the reference object
     """
-    target_vector = np.array([target_location.x - current_location.x, target_location.y - current_location.y])
+    target_vector = np.array(
+        [target_location.x - current_location.x, target_location.y - current_location.y]
+    )
     norm_target = np.linalg.norm(target_vector)
     if norm_target > max_distance:
         return False
 
     forward_vector = np.array(
-        [math.cos(math.radians(orientation)), math.sin(math.radians(orientation))])
-    d_angle = math.degrees(math.acos(np.dot(forward_vector, target_vector) / norm_target))
+        [math.cos(math.radians(orientation)), math.sin(math.radians(orientation))]
+    )
+    d_angle = math.degrees(
+        math.acos(np.dot(forward_vector, target_vector) / norm_target)
+    )
 
     return d_angle < 90.0
 
@@ -154,11 +163,17 @@ def compute_magnitude_angle(target_location, current_location, orientation):
     :param orientation: orientation of the reference object
     :return: a tuple composed by the distance to the object and the angle between both objects
     """
-    target_vector = np.array([target_location.x - current_location.x, target_location.y - current_location.y])
+    target_vector = np.array(
+        [target_location.x - current_location.x, target_location.y - current_location.y]
+    )
     norm_target = np.linalg.norm(target_vector)
 
-    forward_vector = np.array([math.cos(math.radians(orientation)), math.sin(math.radians(orientation))])
-    d_angle = math.degrees(math.acos(np.dot(forward_vector, target_vector) / norm_target))
+    forward_vector = np.array(
+        [math.cos(math.radians(orientation)), math.sin(math.radians(orientation))]
+    )
+    d_angle = math.degrees(
+        math.acos(np.dot(forward_vector, target_vector) / norm_target)
+    )
 
     return (norm_target, d_angle)
 
@@ -171,7 +186,9 @@ def distance_vehicle(waypoint, vehicle_transform):
     return math.sqrt(dx * dx + dy * dy)
 
 
-def get_closest_vehicle_distance(ego_vehicle: carla.Actor, target_vehicles: List[carla.Actor]) -> float:
+def get_closest_vehicle_distance(
+    ego_vehicle: carla.Actor, target_vehicles: List[carla.Actor]
+) -> float:
     closest_vehicle = target_vehicles[0]
     closest_vehicle_dist = distance_between_actors(ego_vehicle, closest_vehicle)
 
@@ -183,7 +200,9 @@ def get_closest_vehicle_distance(ego_vehicle: carla.Actor, target_vehicles: List
     return closest_vehicle_dist
 
 
-def distance_between_actors(first_actor: carla.Actor, second_actor: carla.Actor) -> float:
+def distance_between_actors(
+    first_actor: carla.Actor, second_actor: carla.Actor
+) -> float:
     """Calculates euclidean distance between two actors. Front Edge of first actor and all sides of other actor.
 
     Args:
@@ -208,7 +227,9 @@ def distance_between_actors(first_actor: carla.Actor, second_actor: carla.Actor)
     return min_dist
 
 
-def get_closest_pedestrian_distance(ego_vehicle: carla.Actor, pedestrians: List[carla.Actor]) -> float:
+def get_closest_pedestrian_distance(
+    ego_vehicle: carla.Actor, pedestrians: List[carla.Actor]
+) -> float:
     closest_ped = pedestrians[0]
     closest_ped_dist = distance_between_actors(ego_vehicle, closest_ped)
 
@@ -226,13 +247,16 @@ def get_bounding_box(actor: carla.Actor) -> List[carla.Location]:
         carla.Location(x=-bb.x, y=-bb.y),
         carla.Location(x=bb.x, y=-bb.y),
         carla.Location(x=bb.x, y=bb.y),
-        carla.Location(x=-bb.x, y=bb.y)]
+        carla.Location(x=-bb.x, y=bb.y),
+    ]
     t = actor.get_transform()
     t.transform(corners)
     return corners
 
 
-def distance_between_locations(first_location: carla.Location, second_location: carla.Location) -> float:
+def distance_between_locations(
+    first_location: carla.Location, second_location: carla.Location
+) -> float:
     """Calculates euclidean distance between two locations.
 
     Args:
@@ -247,7 +271,9 @@ def distance_between_locations(first_location: carla.Location, second_location: 
     return np.sqrt((x1 - x2) ** 2 + (y1 - y2) ** 2)
 
 
-def xyyawtransform_to_carla_transform(x: float, y: float, yaw: float) -> carla.Transform:
+def xyyawtransform_to_carla_transform(
+    x: float, y: float, yaw: float
+) -> carla.Transform:
     veh1_t = carla.Transform()
     veh1_t.location.x = x
     veh1_t.location.y = y
@@ -255,9 +281,10 @@ def xyyawtransform_to_carla_transform(x: float, y: float, yaw: float) -> carla.T
     veh1_t.rotation.yaw += yaw
     return veh1_t
 
+
 def get_open_port() -> int:
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    s.bind(("",0))
+    s.bind(("", 0))
     s.listen(1)
     port = s.getsockname()[1]
     s.close()
