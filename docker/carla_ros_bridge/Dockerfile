@@ -6,15 +6,23 @@ SHELL [ "/bin/bash", "-c" ]
 ARG CARLA_VERSION
 
 # Set up apt repo
-RUN apt-get update
-RUN apt-get install -y lsb-release software-properties-common python-is-python3
-RUN apt-get update
+RUN apt-get update && \
+    apt-get install -y lsb-release software-properties-common python-is-python3 git && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
 
 # Install catkin build system
-RUN apt-get update && apt-get install -y build-essential python3-catkin-tools wget curl python3-rosdep python3-rospkg
+RUN apt-get update && \
+    apt-get install -y build-essential python3-catkin-tools wget curl python3-rosdep python3-rospkg && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
 
 # Install Carla Python API
-RUN apt-get install -y python3-pip python3-pygame
+RUN apt-get update && \
+    apt-get install -y python3-pip python3-pygame && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
 COPY --from=carla_api --chown=root /home/carla/PythonAPI /opt/carla/PythonAPI
 WORKDIR /opt/carla/PythonAPI
 RUN python3 -m pip install --upgrade pip
@@ -53,7 +61,6 @@ ENV SHELL=/bin/bash
 RUN mkdir -p ~/catkin_ws/src
 WORKDIR /home/docker/catkin_ws/src
 
-RUN sudo apt-get install -y git
 RUN if [ "${CARLA_VERSION}" = "0.9.13" ]; then \
       git clone --depth 1 --recursive --branch master https://github.com/carla-simulator/ros-bridge.git ; \
     else \

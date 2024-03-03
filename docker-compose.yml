@@ -3,18 +3,22 @@ services:
   main_container:
     build:
       context: ./docker
+      dockerfile: ./main_container/Dockerfile
       args:
         - CARLA_VERSION=${CARLA_VERSION:?}
         - CUDA_VERSION=${CUDA_VERSION:?}
       cache_from:
-        - faizansana/intersection-carla-gym:cuda-${CUDA_VERSION:?}-carla-${CARLA_VERSION:?}
-    image: faizansana/intersection-carla-gym:cuda-${CUDA_VERSION:?}-carla-${CARLA_VERSION:?}
+        - faizansana/intersection-carla-gym:cuda-${CUDA_VERSION:?}-carla-${CARLA_VERSION:?}-ros-noetic
+    image: faizansana/intersection-carla-gym:cuda-${CUDA_VERSION:?}-carla-${CARLA_VERSION:?}-ros-noetic
     user: ${FIXUID:?}:${FIXGID:?}
+    environment:
+      - ROS_MASTER_URI=http://rosmaster:11311/
     volumes:
       - ./:/home/docker/src
     runtime: nvidia
     depends_on:
       - carla_server
+      - rosmaster
 
   carla_server:
     image: "carlasim/carla:${CARLA_VERSION}"
@@ -27,3 +31,38 @@ services:
           - driver: nvidia
             device_ids: ['${GPU_ID:?}']
             capabilities: [gpu]
+  
+  carla_ros_bridge:
+    image: faizansana/carla-ros-bridge:carla-${CARLA_VERSION:?}
+    build: 
+      context: ./docker
+      dockerfile: ./carla_ros_bridge/Dockerfile
+      cache_from:
+        - faizansana/carla-ros-bridge:carla-${CARLA_VERSION:?}
+      args:
+        - CARLA_VERSION=${CARLA_VERSION:?}
+    user: ${FIXUID:?}:${FIXGID:?}
+    environment:
+      - CARLA_HOSTNAME=carla_server
+      - ROS_MASTER_URI=http://rosmaster:11311/
+    depends_on:
+      - carla_server
+      - rosmaster
+
+  rosmaster:
+    image: ros:noetic
+    command: roscore
+    environment:
+      - ROS_HOSTNAME=rosmaster
+      - ROS_MASTER_URI=http://rosmaster:11311
+
+  foxglove:
+    restart: always
+    # build: ./foxglove
+    image: ghcr.io/jpc/studio:latest
+    command: caddy run
+    volumes:
+      - ./Caddyfile:/src/Caddyfile:ro
+      - ./foxglove_layout.json:/src/foxglove_layout.json:ro
+    ports:
+      - "127.0.0.1:8080:8080"
