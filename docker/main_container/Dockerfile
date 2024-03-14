@@ -3,7 +3,7 @@ ARG CUDA_VERSION=12.0.0
 FROM carlasim/carla:${CARLA_VERSION} AS carla
 
 ARG CUDA_VERSION=12.0.0
-FROM nvidia/cuda:${CUDA_VERSION}-base-ubuntu20.04 AS base
+FROM nvidia/cuda:${CUDA_VERSION}-base-ubuntu22.04 AS base
 SHELL [ "/bin/bash", "-c" ]
 
 ARG CARLA_VERSION=0.9.13
@@ -15,11 +15,11 @@ RUN apt-get update && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-# Install ROS Noetic Desktop Full
-RUN curl -s https://raw.githubusercontent.com/ros/rosdistro/master/ros.asc | sudo apt-key add - && \
-    sh -c 'echo "deb http://packages.ros.org/ros/ubuntu focal main" > /etc/apt/sources.list.d/ros-latest.list' && \
+# Install ROS2 Humble
+RUN curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key -o /usr/share/keyrings/ros-archive-keyring.gpg && \
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu $(. /etc/os-release && echo $UBUNTU_CODENAME) main" | sudo tee /etc/apt/sources.list.d/ros2.list > /dev/null && \
     apt-get update && \
-    apt-get install -y --no-install-recommends ros-noetic-desktop-full && \
+    apt-get install -y --no-install-recommends ros-humble-desktop && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 # Install ROS dependencies for building packages
@@ -80,6 +80,6 @@ RUN if [[ "$CARLA_VERSION" > "0.9.11" ]]; then \
     fi
 ENV DISPLAY=:1.0
 WORKDIR /home/docker
-RUN echo "source /opt/ros/noetic/setup.bash" >> ~/.bashrc
+RUN echo "source /opt/ros/humble/setup.bash" >> ~/.bashrc
 ENTRYPOINT ["fixuid"]
 CMD ["/usr/bin/supervisord"]

@@ -56,13 +56,16 @@ services:
       - ROS_HOSTNAME=rosmaster
       - ROS_MASTER_URI=http://rosmaster:11311
 
-  foxglove:
+  foxglove_bridge:
+    build:
+      context: ./docker/foxglove_bridge
+      dockerfile: Dockerfile
+    container_name: foxglove_bridge
+    image: faizansana/foxglove-bridge:latest
     restart: always
-    # build: ./foxglove
-    image: ghcr.io/jpc/studio:latest
-    command: caddy run
-    volumes:
-      - ./Caddyfile:/src/Caddyfile:ro
-      - ./foxglove_layout.json:/src/foxglove_layout.json:ro
-    ports:
-      - "127.0.0.1:8080:8080"
+    command: /bin/bash -c "source /opt/ros/noetic/setup.bash && roslaunch foxglove_bridge foxglove_bridge.launch"
+    environment:
+      - ROS_MASTER_URI=http://rosmaster:11311
+    depends_on: 
+      carla_ros_bridge:
+        condition: service_started
