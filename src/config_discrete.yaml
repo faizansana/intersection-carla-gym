@@ -1,7 +1,5 @@
-exp_name: "first_test"
-output_dir: "output"
 env:
-  obs_space: "dict" # "dict" or "normal"
+  observations_type: "image" # "dict" or "normal" or "image"
   continuous: False
   target_speeds: [0, 3, 6, 9, 12] # For discrete speed control
   desired_speed: 12 # For continuous speed control
@@ -11,7 +9,7 @@ env:
   render: false
   ego_vehicle_filter: "vehicle.lincoln*"
   num_veh: 1
-  num_ped: 2
+  num_ped: 0
   max_steps: 500
   CAM_RES: 1024
   max_waypt: 200

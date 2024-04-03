@@ -3,6 +3,7 @@
 from __future__ import division
 
 import copy
+import logging
 import random
 from typing import Dict, Tuple
 
@@ -13,7 +14,6 @@ import pygame
 from carla import ColorConverter as cc
 from gymnasium import spaces
 
-import util.carla_logger as carla_logger
 import util.misc as helper
 from util.plotting_udp_server import PlottingUDPServer
 from local_carla_agents.navigation.global_route_planner import GlobalRoutePlanner
@@ -21,6 +21,8 @@ from local_carla_agents.navigation.global_route_planner_dao import GlobalRoutePl
 from local_carla_agents.navigation.local_planner import LocalPlanner
 
 MAX_VALUE = 1000000
+
+logging.getLogger(__name__)
 
 
 class CarlaEnv(gym.Env):
@@ -35,24 +37,21 @@ class CarlaEnv(gym.Env):
     ACTIONS_INDEXES = {v: k for k, v in ACTIONS.items()}
 
     def __init__(self, cfg: Dict, host: str, port: int, udp_server: bool = False):
-
-        host_num = host.split("_")[-1]
-        exp_name = cfg["exp_name"]
-        outdir = cfg["output_dir"]
-        self.logger = carla_logger.setup_carla_logger(output_dir=outdir, exp_name=exp_name, rank=host_num)
-
         for k, v in cfg["env"].items():
             setattr(self, k, v)
         self.tm_port = helper.get_open_port()
         self.udp_server = udp_server
         if udp_server:
             udp_server_port = helper.get_open_port()
-            self.logger.info(f"UDP server port: {udp_server_port}")
+            logging.info(f"UDP server port: {udp_server_port}")
             self.udp_server = PlottingUDPServer(port=udp_server_port)
         self.ego = None
 
-        self.logger.info(f"Env running on server {host}")
+        logging.info(f"Env running on server {host}")
         self._normalize_reward_weights()
+
+        # Connect to carla server and get world object
+        self._make_carla_client(host, port)
 
         # action and observation space
         if self.continuous:
@@ -62,9 +61,9 @@ class CarlaEnv(gym.Env):
             self.speed_index = 0
         num_vehicles = 3 * self.num_veh
         num_pedestrians = 4 * self.num_ped
-        if self.obs_space == "normal":
+        if self.observations_type == "normal":
             self.observation_space = spaces.Box(low=-50.0, high=50.0, shape=(7 + 3*num_vehicles + 3*num_pedestrians, ), dtype=np.float32)
-        elif self.obs_space == "dict":
+        elif self.observations_type == "dict":
             # Create dict space based on number of vehicles and pedestrians
             self.observation_space = spaces.Dict(
                 {
@@ -73,9 +72,11 @@ class CarlaEnv(gym.Env):
                     **({"pedestrians": spaces.Box(low=-50.0, high=50.0, shape=(3*num_pedestrians,), dtype=np.float32)} if num_pedestrians else {})
                 }
             )
+        elif self.observations_type == "image":
+            self.observation_space = spaces.Box(low=0, high=255, shape=(240, 320, 3), dtype=np.uint8)
+            self.observation_image = np.zeros((240, 320, 3), dtype=np.uint8)
 
-        # Connect to carla server and get world object
-        self._make_carla_client(host, port)
+            self.front_camera_bp = self._setup_front_camera_sensor_blueprint()
 
         # Create the ego vehicle blueprint
         self.ego_bp = self._create_vehicle_bluepprint(self.ego_vehicle_filter, color="49,8,8")
@@ -139,6 +140,14 @@ class CarlaEnv(gym.Env):
         self.camera_bp.set_attribute("fov", "110")
         # Set the time in seconds between sensor captures
         self.camera_bp.set_attribute("sensor_tick", "0.02")
+
+    def _setup_front_camera_sensor_blueprint(self):
+        bp = self.world.get_blueprint_library().find("sensor.camera.rgb")
+        bp.set_attribute("image_size_x", str(320))
+        bp.set_attribute("image_size_y", str(240))
+        bp.set_attribute("fov", str(110))
+        bp.set_attribute("sensor_tick", str(0.02))
+        return bp
 
     def _setup_obstacle_sensor_blueprint(self):
         self.obstacle_bp = self.world.get_blueprint_library().find("sensor.other.obstacle")
@@ -239,6 +248,15 @@ class CarlaEnv(gym.Env):
         array = array[:, :, ::-1]
         return pygame.surfarray.make_surface(array.swapaxes(0, 1))
 
+    @staticmethod
+    def _convert_to_rgb_image(image: carla.libcarla.Image) -> np.ndarray:
+        image.convert(cc.Raw)
+        array = np.frombuffer(image.raw_data, dtype=np.uint8)
+        array = np.reshape(array, (image.height, image.width, 4))
+        array = array[:, :, :3]
+        array = array[:, :, ::-1]
+        return array
+
     def _create_vehicle_bluepprint(self,
                                    actor_filter: str,
                                    color=None,
@@ -273,31 +291,31 @@ class CarlaEnv(gym.Env):
         # If at destination
         dest = self.dest
         if np.sqrt((ego_x-dest.location.x)**2+(ego_y-dest.location.y)**2) < 2.0:
-            self.logger.debug("Get destination!")
+            logging.debug("Get destination!")
             self.isSuccess = True
             return True
 
         # If collides
         if self.collision_occured:
             if self.pedestrian_collision:
-                self.logger.debug("Pedestrian collision happened!")
+                logging.debug("Pedestrian collision happened!")
             else:
-                self.logger.debug("Collision happened!")
+                logging.debug("Collision happened!")
             self.isCollided = True
             return True
 
         # If reach maximum timestep
         if self.time_step >= self.max_steps:
-            self.logger.debug("Time out!")
+            logging.debug("Time out!")
             self.isTimeOut = True
             return True
 
         # If out of lane
         if abs(self.state_info["lateral_dist_t"]) > 2.0:
             if self.state_info["lateral_dist_t"] > 0:
-                self.logger.debug("Left Lane invasion!")
+                logging.debug("Left Lane invasion!")
             else:
-                self.logger.debug("Right Lane invasion!")
+                logging.debug("Right Lane invasion!")
             self.isOutOfLane = True
             return True
 
@@ -305,11 +323,11 @@ class CarlaEnv(gym.Env):
         velocity = self.ego.get_velocity()
         v_norm = np.linalg.norm(np.array((velocity.x, velocity.y)))
         if v_norm < 0.0:
-            self.logger.debug("Speed too slow!")
+            logging.debug("Speed too slow!")
             self.isSpecialSpeed = True
             return True
         elif v_norm > (5 * self.desired_speed):
-            self.logger.debug("Speed too fast!")
+            logging.debug("Speed too fast!")
             self.isSpecialSpeed = True
             return True
 
@@ -399,12 +417,12 @@ class CarlaEnv(gym.Env):
         self.world.set_weather(carla.WeatherParameters.ClearNoon)
 
     def _make_carla_client(self, host, port):
-        self.logger.info("connecting to Carla server...")
+        logging.info("connecting to Carla server...")
         self.client = carla.Client(host, port)
         self.client.set_timeout(100.0)
         self._load_world()
 
-        self.logger.info("Carla server port {} connected!".format(port))
+        logging.info("Carla server port {} connected!".format(port))
 
     def _get_delta_yaw(self):
         """
@@ -412,7 +430,7 @@ class CarlaEnv(gym.Env):
         """
         current_wpt, _ = self._get_waypoint(location=self.ego.get_location())
         if not current_wpt:
-            self.logger.error("Fail to find a waypoint")
+            logging.error("Fail to find a waypoint")
             wpt_yaw = self.current_wpt[2] % 360
         else:
             wpt_yaw = current_wpt.transform.rotation.yaw % 360
@@ -433,8 +451,8 @@ class CarlaEnv(gym.Env):
             if t == 0 and None wpt: return self.starts
         """
         waypoint, progress = self._get_waypoint(location=self.ego.get_location())
-        waypoint_loc = self._get_waypoint(location=self.ego.get_location())[0].transform.location
-        self.world.debug.draw_point(waypoint_loc, life_time=20)
+        # waypoint_loc = self._get_waypoint(location=self.ego.get_location())[0].transform.location
+        # self.world.debug.draw_point(waypoint_loc, life_time=20)
         if waypoint:
             return np.array(
                 (waypoint.transform.location.x, waypoint.transform.location.y,
@@ -474,17 +492,19 @@ class CarlaEnv(gym.Env):
         ped_dist_x = np.array(self.state_info["peds_dist_x"]).reshape((len(self.state_info["peds_dist_y"]), )) / 30
         ped_vel = np.array(self.state_info["peds_vel"]).reshape((len(self.state_info["peds_dist_y"]), )) / 7
 
-        if self.obs_space == "normal":
+        if self.observations_type == "normal":
             info_vec = np.concatenate([
                 velocity_t, accel_t, delta_yaw_t, dyaw_dt_t, lateral_dist_t,
                 target_dist_y, target_dist_x, target_vel, ped_dist_y, ped_dist_x, ped_vel
             ], axis=0, dtype=np.float32)
-        elif self.obs_space == "dict":
+        elif self.observations_type == "dict":
             info_vec = {
                 "ego_state": np.concatenate([velocity_t, accel_t, delta_yaw_t, dyaw_dt_t, lateral_dist_t], axis=0, dtype=np.float32),
                 **({"adv_vehicles": np.concatenate([target_dist_y, target_dist_x, target_vel], axis=0, dtype=np.float32)} if self.num_veh else {}),
                 **({"pedestrians": np.concatenate([ped_dist_y, ped_dist_x, ped_vel], axis=0, dtype=np.float32)} if self.num_ped else {})
             }
+        elif self.observations_type == "image":
+            info_vec = self.observation_image
 
         return info_vec
 
@@ -548,7 +568,10 @@ class CarlaEnv(gym.Env):
                 self.pedestrian_collision = True
 
         def get_camera_img(data):
-            self.og_camera_img = data
+            self.og_camera_img = self._convert_to_rgb_image(data)
+
+        def _front_camera_img(data):
+            self.observation_image = self._convert_to_rgb_image(data)
 
         # Add collision sensor
         self.ego_collision_sensor = self.world.spawn_actor(self.collision_bp, carla.Transform(), attach_to=self.ego)
@@ -569,6 +592,10 @@ class CarlaEnv(gym.Env):
 
         self.camera_sensor = self.world.spawn_actor(self.camera_bp, self.camera_trans, attach_to=self.ego)
         self.camera_sensor.listen(lambda data: get_camera_img(data))
+
+        if self.observations_type == "image":
+            self.front_camera_sensor = self.world.spawn_actor(self.front_camera_bp, carla.Transform(carla.Location(x=2.5, z=0.7), carla.Rotation(yaw=0.0)), attach_to=self.ego)
+            self.front_camera_sensor.listen(lambda data: _front_camera_img(data))
 
         # Update timesteps
         self.time_step = 1
@@ -724,7 +751,7 @@ class CarlaEnv(gym.Env):
         speed_in_km_h = speed_in_vms * 3.6
 
         self.routeplanner.set_speed(speed_in_km_h)
-        control = self.routeplanner.run_step(debug=True)
+        control = self.routeplanner.run_step(debug=False)
         self.ego.apply_control(control)
         if self.udp_server:
             self._update_udp_server(control)
@@ -745,9 +772,7 @@ class CarlaEnv(gym.Env):
         return (self._get_obs(), current_reward, isDone, isDone, copy.deepcopy(self.state_info))
 
     def display(self, display):
-        if not self.og_camera_img:
-            return
-        camera_surface = self._to_display_surface(self.og_camera_img)
+        camera_surface = pygame.surfarray.make_surface(self.og_camera_img.swapaxes(0, 1))
         display.blit(camera_surface, (0, 0))
 
     def _clear_actor_filters(self, actor_filters):
