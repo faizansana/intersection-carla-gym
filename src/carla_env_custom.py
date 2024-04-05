@@ -19,10 +19,9 @@ from util.plotting_udp_server import PlottingUDPServer
 from local_carla_agents.navigation.global_route_planner import GlobalRoutePlanner
 from local_carla_agents.navigation.global_route_planner_dao import GlobalRoutePlannerDAO
 from local_carla_agents.navigation.local_planner import LocalPlanner
+from util.carla_logger import setup_carla_logger
 
 MAX_VALUE = 1000000
-
-logging.getLogger(__name__)
 
 
 class CarlaEnv(gym.Env):
@@ -37,17 +36,19 @@ class CarlaEnv(gym.Env):
     ACTIONS_INDEXES = {v: k for k, v in ACTIONS.items()}
 
     def __init__(self, cfg: Dict, host: str, port: int, udp_server: bool = False):
+
+        self.logger = setup_carla_logger()
         for k, v in cfg["env"].items():
             setattr(self, k, v)
         self.tm_port = helper.get_open_port()
         self.udp_server = udp_server
         if udp_server:
             udp_server_port = helper.get_open_port()
-            logging.info(f"UDP server port: {udp_server_port}")
+            self.logger.info(f"UDP server port: {udp_server_port}")
             self.udp_server = PlottingUDPServer(port=udp_server_port)
         self.ego = None
 
-        logging.info(f"Env running on server {host}")
+        self.logger.info(f"Env running on server {host}")
         self._normalize_reward_weights()
 
         # Connect to carla server and get world object
@@ -291,31 +292,31 @@ class CarlaEnv(gym.Env):
         # If at destination
         dest = self.dest
         if np.sqrt((ego_x-dest.location.x)**2+(ego_y-dest.location.y)**2) < 2.0:
-            logging.debug("Get destination!")
+            self.logger.debug("Get destination!")
             self.isSuccess = True
             return True
 
         # If collides
         if self.collision_occured:
             if self.pedestrian_collision:
-                logging.debug("Pedestrian collision happened!")
+                self.logger.debug("Pedestrian collision happened!")
             else:
-                logging.debug("Collision happened!")
+                self.logger.debug("Collision happened!")
             self.isCollided = True
             return True
 
         # If reach maximum timestep
         if self.time_step >= self.max_steps:
-            logging.debug("Time out!")
+            self.logger.debug("Time out!")
             self.isTimeOut = True
             return True
 
         # If out of lane
         if abs(self.state_info["lateral_dist_t"]) > 2.0:
             if self.state_info["lateral_dist_t"] > 0:
-                logging.debug("Left Lane invasion!")
+                self.logger.debug("Left Lane invasion!")
             else:
-                logging.debug("Right Lane invasion!")
+                self.logger.debug("Right Lane invasion!")
             self.isOutOfLane = True
             return True
 
@@ -323,11 +324,11 @@ class CarlaEnv(gym.Env):
         velocity = self.ego.get_velocity()
         v_norm = np.linalg.norm(np.array((velocity.x, velocity.y)))
         if v_norm < 0.0:
-            logging.debug("Speed too slow!")
+            self.logger.debug("Speed too slow!")
             self.isSpecialSpeed = True
             return True
         elif v_norm > (5 * self.desired_speed):
-            logging.debug("Speed too fast!")
+            self.logger.debug("Speed too fast!")
             self.isSpecialSpeed = True
             return True
 
@@ -417,12 +418,12 @@ class CarlaEnv(gym.Env):
         self.world.set_weather(carla.WeatherParameters.ClearNoon)
 
     def _make_carla_client(self, host, port):
-        logging.info("connecting to Carla server...")
+        self.logger.info("connecting to Carla server...")
         self.client = carla.Client(host, port)
         self.client.set_timeout(100.0)
         self._load_world()
 
-        logging.info("Carla server port {} connected!".format(port))
+        self.logger.info("Carla server port {} connected!".format(port))
 
     def _get_delta_yaw(self):
         """
@@ -430,7 +431,7 @@ class CarlaEnv(gym.Env):
         """
         current_wpt, _ = self._get_waypoint(location=self.ego.get_location())
         if not current_wpt:
-            logging.error("Fail to find a waypoint")
+            self.logger.error("Fail to find a waypoint")
             wpt_yaw = self.current_wpt[2] % 360
         else:
             wpt_yaw = current_wpt.transform.rotation.yaw % 360
