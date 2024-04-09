@@ -28,7 +28,7 @@ env:
     c_v_eff_under_limit: 1.0
     c_v_eff_over_limit: -2.0
     # Penalty for needing another step
-    r_step: -0.0
+    r_step: -1.0
     # Penalty for non-smooth actions
     c_action_reg: -0.0
     # Penalty for yaw delta w.r.t. road heading

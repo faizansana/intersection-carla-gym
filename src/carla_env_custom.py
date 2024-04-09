@@ -383,32 +383,7 @@ class CarlaEnv(gym.Env):
         else:
             r_v_eff = weights["c_v_eff_under_limit"] * speed_norm
 
-        delta_yaw, _, _ = self._get_delta_yaw()
-        r_delta_yaw = weights["c_yaw_delta"] * delta_yaw
-
-        if self.continuous:
-            r_action_regularized = weights["c_action_reg"] * np.linalg.norm(action)**2
-        else:
-            r_action_regularized = 0
-
-        lateral_dist = self.state_info["lateral_dist_t"]
-        r_lateral = weights["c_lat_dev"] * abs(lateral_dist)
-
-        r_dist_from_goal = weights["c_dist_from_goal"] * (-1 + self.state_info["progress"])
-        r_progress = weights["c_progress"] * self.state_info["progress"]
-
-        if self._closest_pedestrian_distance < self.pedestrian_proximity_threshold:
-            # Increase negative reward as pedestrian distance decreases
-            r_pedestrian = weights["c_pedestrian_proximity"] * (self.pedestrian_proximity_threshold - self._closest_pedestrian_distance)
-        else:
-            r_pedestrian = 0
-
-        if self._closest_vehicle_distance < self.vehicle_proximity_threshold:
-            r_vehicle_proximity = weights["c_vehicle_proximity"] * (self.vehicle_proximity_threshold - self._closest_vehicle_distance)
-        else:
-            r_vehicle_proximity = 0
-
-        r_tot = r_v_eff + weights["r_step"] + r_delta_yaw + r_action_regularized + r_lateral + r_progress + r_dist_from_goal + r_pedestrian + r_vehicle_proximity
+        r_tot = r_v_eff + weights["r_step"]
 
         return r_tot
 
