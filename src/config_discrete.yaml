@@ -8,7 +8,7 @@ env:
   port: 2000
   render: false
   ego_vehicle_filter: "vehicle.lincoln*"
-  num_veh: 1
+  num_veh: 3
   num_ped: 0
   max_steps: 500
   CAM_RES: 1024
