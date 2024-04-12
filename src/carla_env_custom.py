@@ -3,11 +3,11 @@
 from __future__ import division
 
 import copy
-import logging
 import random
 from typing import Dict, Tuple
 
 import carla
+import cv2
 import gymnasium as gym
 import numpy as np
 import pygame
@@ -74,8 +74,8 @@ class CarlaEnv(gym.Env):
                 }
             )
         elif self.observations_type == "image":
-            self.observation_space = spaces.Box(low=0, high=255, shape=(240, 320, 3), dtype=np.uint8)
-            self.observation_image = np.zeros((240, 320, 3), dtype=np.uint8)
+            self.observation_space = spaces.Box(low=-1.0, high=1.0, shape=(128, 128), dtype=np.float64)
+            self.observation_image = np.zeros((128, 128), dtype=np.float64)
 
             self.front_camera_bp = self._setup_front_camera_sensor_blueprint()
 
@@ -484,6 +484,14 @@ class CarlaEnv(gym.Env):
 
         return info_vec
 
+    def _preprocess_image(self, image: np.ndarray, x_dim: int, y_dim: int) -> np.ndarray:
+        img_resized = cv2.resize(image, (x_dim, y_dim), interpolation=cv2.INTER_AREA)
+        img_gray = cv2.cvtColor(img_resized, cv2.COLOR_BGR2GRAY)
+        scaled_image = img_gray / 255.0
+        mean, std = 0.5, 0.5
+        normalized_image = (scaled_image - mean) / std
+        return normalized_image
+
     def reset(self, seed=None):
         # Randomly select one of the destinations
         self.dest = random.choice(self.possible_destinations)
@@ -547,7 +555,8 @@ class CarlaEnv(gym.Env):
             self.og_camera_img = self._convert_to_rgb_image(data)
 
         def _front_camera_img(data):
-            self.observation_image = self._convert_to_rgb_image(data)
+            rgb_image = self._convert_to_rgb_image(data)
+            self.observation_image = self._preprocess_image(rgb_image, 128, 128)
 
         # Add collision sensor
         self.ego_collision_sensor = self.world.spawn_actor(self.collision_bp, carla.Transform(), attach_to=self.ego)
