@@ -51,7 +51,7 @@ COPY --from=carla /home/carla/PythonAPI /opt/carla/PythonAPI
 USER docker:docker
 ENV SHELL=/bin/bash
 ENV CARLA_VERSION ${CARLA_VERSION:?}
-ENV PYTHON_VENV_NAME custom_carla_gym
+ENV PYTHON_VENV_NAME intersection_carla_gym
 
 COPY --chown=docker:docker ./requirements.txt /tmp
 
