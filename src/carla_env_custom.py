@@ -7,18 +7,21 @@ import random
 from typing import Dict, Tuple
 
 import carla
+import cv2
 import gymnasium as gym
 import numpy as np
 import pygame
 from carla import ColorConverter as cc
 from gymnasium import spaces
 
-import util.carla_logger as carla_logger
 import util.misc as helper
-from util.plotting_udp_server import PlottingUDPServer
-from local_carla_agents.navigation.global_route_planner import GlobalRoutePlanner
-from local_carla_agents.navigation.global_route_planner_dao import GlobalRoutePlannerDAO
+from local_carla_agents.navigation.global_route_planner import \
+    GlobalRoutePlanner
+from local_carla_agents.navigation.global_route_planner_dao import \
+    GlobalRoutePlannerDAO
 from local_carla_agents.navigation.local_planner import LocalPlanner
+from util.carla_logger import setup_carla_logger
+from util.plotting_udp_server import PlottingUDPServer
 
 MAX_VALUE = 1000000
 
@@ -26,21 +29,12 @@ MAX_VALUE = 1000000
 class CarlaEnv(gym.Env):
     """An OpenAI gym wrapper for CARLA simulator."""
 
-    ACTIONS: Dict[int, str] = {
-        0: "SLOWER",
-        1: "IDLE",
-        2: "FASTER"
-    }
+    ACTIONS: Dict[int, str] = {0: "SLOWER", 1: "IDLE", 2: "FASTER"}
 
     ACTIONS_INDEXES = {v: k for k, v in ACTIONS.items()}
 
     def __init__(self, cfg: Dict, host: str, port: int, udp_server: bool = False):
-
-        host_num = host.split("_")[-1]
-        exp_name = cfg["exp_name"]
-        outdir = cfg["output_dir"]
-        self.logger = carla_logger.setup_carla_logger(output_dir=outdir, exp_name=exp_name, rank=host_num)
-
+        self.logger = setup_carla_logger()
         for k, v in cfg["env"].items():
             setattr(self, k, v)
         self.tm_port = helper.get_open_port()
@@ -54,41 +48,87 @@ class CarlaEnv(gym.Env):
         self.logger.info(f"Env running on server {host}")
         self._normalize_reward_weights()
 
+        # Connect to carla server and get world object
+        self._make_carla_client(host, port)
+
         # action and observation space
         if self.continuous:
-            self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(1,), dtype=np.float32)
+            self.action_space = spaces.Box(
+                low=-1.0, high=1.0, shape=(1,), dtype=np.float32
+            )
         else:
             self.action_space = spaces.Discrete(3)
             self.speed_index = 0
         num_vehicles = 3 * self.num_veh
         num_pedestrians = 4 * self.num_ped
-        if self.obs_space == "normal":
-            self.observation_space = spaces.Box(low=-50.0, high=50.0, shape=(7 + 3*num_vehicles + 3*num_pedestrians, ), dtype=np.float32)
-        elif self.obs_space == "dict":
+        if self.observations_type == "normal":
+            self.observation_space = spaces.Box(
+                low=-50.0,
+                high=50.0,
+                shape=(7 + 3 * num_vehicles + 3 * num_pedestrians,),
+                dtype=np.float32,
+            )
+        elif self.observations_type == "dict":
             # Create dict space based on number of vehicles and pedestrians
             self.observation_space = spaces.Dict(
                 {
-                    "ego_state": spaces.Box(low=-50.0, high=50.0, shape=(7,), dtype=np.float32),
-                    **({"adv_vehicles": spaces.Box(low=-50.0, high=50.0, shape=(3*num_vehicles,), dtype=np.float32)} if num_vehicles else {}),
-                    **({"pedestrians": spaces.Box(low=-50.0, high=50.0, shape=(3*num_pedestrians,), dtype=np.float32)} if num_pedestrians else {})
+                    "ego_state": spaces.Box(
+                        low=-50.0, high=50.0, shape=(7,), dtype=np.float32
+                    ),
+                    **(
+                        {
+                            "adv_vehicles": spaces.Box(
+                                low=-50.0,
+                                high=50.0,
+                                shape=(3 * num_vehicles,),
+                                dtype=np.float32,
+                            )
+                        }
+                        if num_vehicles
+                        else {}
+                    ),
+                    **(
+                        {
+                            "pedestrians": spaces.Box(
+                                low=-50.0,
+                                high=50.0,
+                                shape=(3 * num_pedestrians,),
+                                dtype=np.float32,
+                            )
+                        }
+                        if num_pedestrians
+                        else {}
+                    ),
                 }
             )
+        elif self.observations_type == "image":
+            self.observation_space = spaces.Box(
+                low=-1.0, high=1.0, shape=(128, 128), dtype=np.float64
+            )
+            self.observation_image = np.zeros((128, 128), dtype=np.float64)
 
-        # Connect to carla server and get world object
-        self._make_carla_client(host, port)
+            self.front_camera_bp = self._setup_front_camera_sensor_blueprint()
 
         # Create the ego vehicle blueprint
-        self.ego_bp = self._create_vehicle_bluepprint(self.ego_vehicle_filter, color="49,8,8")
+        self.ego_bp = self._create_vehicle_bluepprint(
+            self.ego_vehicle_filter, color="49,8,8"
+        )
 
         # Collision sensor
         self.collision_occured = False
-        self.collision_bp = self.world.get_blueprint_library().find("sensor.other.collision")
+        self.collision_bp = self.world.get_blueprint_library().find(
+            "sensor.other.collision"
+        )
 
         self._setup_obstacle_sensor_blueprint()
         # Add Top down Camera sensor
         self._setup_camera_sensor_blueprint()
-        self._imu_sensor_bp = self.world.get_blueprint_library().find("sensor.other.imu")
-        self._gns_sensor_bp = self.world.get_blueprint_library().find("sensor.other.gnss")
+        self._imu_sensor_bp = self.world.get_blueprint_library().find(
+            "sensor.other.imu"
+        )
+        self._gns_sensor_bp = self.world.get_blueprint_library().find(
+            "sensor.other.gnss"
+        )
 
         # Record the time of total steps and resetting steps
         self.total_step = 0
@@ -114,15 +154,23 @@ class CarlaEnv(gym.Env):
         self.global_planner.setup()
         # Start and Destination
         self.possible_start_positions = [
-            carla.Transform(carla.Location(x=84.8, y=-110, z=10), carla.Rotation(yaw=270)),  # Left lane
+            carla.Transform(
+                carla.Location(x=84.8, y=-110, z=10), carla.Rotation(yaw=270)
+            ),  # Left lane
             # carla.Transform(carla.Location(x=88, y=-110, z=10), carla.Rotation(yaw=270)),  # Right lane
         ]
         # TODO: Have different start positions for different routes
         self.start = random.choice(self.possible_start_positions)
         self.possible_destinations = [
-            carla.Transform(carla.Location(x=49, y=-137), carla.Rotation()),  # left turn
-            carla.Transform(carla.Location(x=84.8, y=-170), carla.Rotation(yaw=270)),  # straight
-            carla.Transform(carla.Location(x=110, y=-132.5), carla.Rotation(yaw=90))  # right turn
+            carla.Transform(
+                carla.Location(x=49, y=-137), carla.Rotation()
+            ),  # left turn
+            carla.Transform(
+                carla.Location(x=84.8, y=-170), carla.Rotation(yaw=270)
+            ),  # straight
+            carla.Transform(
+                carla.Location(x=110, y=-132.5), carla.Rotation(yaw=90)
+            ),  # right turn
         ]
 
         # Setup info variables
@@ -131,7 +179,9 @@ class CarlaEnv(gym.Env):
 
     def _setup_camera_sensor_blueprint(self):
         self.camera_img = np.zeros((self.CAM_RES, self.CAM_RES, 3), dtype=np.uint8)
-        self.camera_trans = carla.Transform(carla.Location(x=0.8, z=20), carla.Rotation(pitch=-90))
+        self.camera_trans = carla.Transform(
+            carla.Location(x=0.8, z=20), carla.Rotation(pitch=-90)
+        )
         self.camera_bp = self.world.get_blueprint_library().find("sensor.camera.rgb")
         # Modify the attributes of the blueprint to set image resolution and field of view.
         self.camera_bp.set_attribute("image_size_x", str(self.CAM_RES))
@@ -140,9 +190,22 @@ class CarlaEnv(gym.Env):
         # Set the time in seconds between sensor captures
         self.camera_bp.set_attribute("sensor_tick", "0.02")
 
+    def _setup_front_camera_sensor_blueprint(self):
+        bp = self.world.get_blueprint_library().find("sensor.camera.rgb")
+        bp.set_attribute("image_size_x", str(320))
+        bp.set_attribute("image_size_y", str(240))
+        bp.set_attribute("fov", str(110))
+        bp.set_attribute("sensor_tick", str(0.02))
+        return bp
+
     def _setup_obstacle_sensor_blueprint(self):
-        self.obstacle_bp = self.world.get_blueprint_library().find("sensor.other.obstacle")
-        distance = max(self.pedestrian_proximity_threshold, self.vehicle_proximity_threshold) + 3
+        self.obstacle_bp = self.world.get_blueprint_library().find(
+            "sensor.other.obstacle"
+        )
+        distance = (
+            max(self.pedestrian_proximity_threshold, self.vehicle_proximity_threshold)
+            + 3
+        )
         self.obstacle_bp.set_attribute("only_dynamics", "true")
         self.obstacle_bp.set_attribute("debug_linetrace", "true")
         self.obstacle_bp.set_attribute("distance", str(distance))
@@ -173,11 +236,10 @@ class CarlaEnv(gym.Env):
 
         delta_yaw, wpt_yaw, ego_yaw = self._get_delta_yaw()
         road_heading = np.array(
-            [np.cos(wpt_yaw / 180 * np.pi),
-             np.sin(wpt_yaw / 180 * np.pi)])
+            [np.cos(wpt_yaw / 180 * np.pi), np.sin(wpt_yaw / 180 * np.pi)]
+        )
         ego_heading = np.float32(ego_yaw / 180.0 * np.pi)
-        ego_heading_vec = np.array((np.cos(ego_heading),
-                                    np.sin(ego_heading)))
+        ego_heading_vec = np.array((np.cos(ego_heading), np.sin(ego_heading)))
 
         # future_angles = self._get_future_wpt_angle(distances=self.distances)
 
@@ -205,9 +267,9 @@ class CarlaEnv(gym.Env):
         self.state_info["delta_yaw_t"] = delta_yaw
         self.state_info["dyaw_dt_t"] = dyaw_dt
 
-        self.state_info["lateral_dist_t"] = np.linalg.norm(pos_err_vec) * \
-            np.sign(pos_err_vec[0] * road_heading[1] -
-                    pos_err_vec[1] * road_heading[0])
+        self.state_info["lateral_dist_t"] = np.linalg.norm(pos_err_vec) * np.sign(
+            pos_err_vec[0] * road_heading[1] - pos_err_vec[1] * road_heading[0]
+        )
         self.state_info["action_t_1"] = self.last_action
         # self.state_info["angles_t"] = future_angles
         self.state_info["progress"] = progress
@@ -220,7 +282,9 @@ class CarlaEnv(gym.Env):
             e_loc = self.ego.get_location()
             self.state_info["target_vehicles_dist_y"].append(t_loc.y - e_loc.y)
             self.state_info["target_vehicles_dist_x"].append(e_loc.x - t_loc.x)
-            self.state_info["target_vehicles_vel"].append(-1*target_veh.get_velocity().y)
+            self.state_info["target_vehicles_vel"].append(
+                -1 * target_veh.get_velocity().y
+            )
         self.state_info["peds_dist_y"] = []
         self.state_info["peds_dist_x"] = []
         self.state_info["peds_vel"] = []
@@ -229,7 +293,7 @@ class CarlaEnv(gym.Env):
             e_loc = target_ped.get_location()
             self.state_info["peds_dist_y"].append(t_loc.y - e_loc.y)
             self.state_info["peds_dist_x"].append(e_loc.x - t_loc.x)
-            self.state_info["peds_vel"].append(-1*target_ped.get_velocity().y)
+            self.state_info["peds_vel"].append(-1 * target_ped.get_velocity().y)
 
     def _to_display_surface(self, image):
         image.convert(cc.Raw)
@@ -239,10 +303,18 @@ class CarlaEnv(gym.Env):
         array = array[:, :, ::-1]
         return pygame.surfarray.make_surface(array.swapaxes(0, 1))
 
-    def _create_vehicle_bluepprint(self,
-                                   actor_filter: str,
-                                   color=None,
-                                   number_of_wheels: list = [4]):
+    @staticmethod
+    def _convert_to_rgb_image(image: carla.libcarla.Image) -> np.ndarray:
+        image.convert(cc.Raw)
+        array = np.frombuffer(image.raw_data, dtype=np.uint8)
+        array = np.reshape(array, (image.height, image.width, 4))
+        array = array[:, :, :3]
+        array = array[:, :, ::-1]
+        return array
+
+    def _create_vehicle_bluepprint(
+        self, actor_filter: str, color=None, number_of_wheels: list = [4]
+    ):
         """Create the blueprint for a specific actor type.
 
         Args:
@@ -255,8 +327,7 @@ class CarlaEnv(gym.Env):
         blueprint_library = []
         for nw in number_of_wheels:
             blueprint_library = blueprint_library + [
-                x for x in blueprints
-                if int(x.get_attribute("number_of_wheels")) == nw
+                x for x in blueprints if int(x.get_attribute("number_of_wheels")) == nw
             ]
         bp = random.choice(blueprint_library)
         if bp.has_attribute("color"):
@@ -272,7 +343,10 @@ class CarlaEnv(gym.Env):
 
         # If at destination
         dest = self.dest
-        if np.sqrt((ego_x-dest.location.x)**2+(ego_y-dest.location.y)**2) < 2.0:
+        if (
+            np.sqrt((ego_x - dest.location.x) ** 2 + (ego_y - dest.location.y) ** 2)
+            < 2.0
+        ):
             self.logger.debug("Get destination!")
             self.isSuccess = True
             return True
@@ -360,36 +434,13 @@ class CarlaEnv(gym.Env):
         v = self.ego.get_velocity()
         speed_norm = np.linalg.norm(np.array([v.x, v.y]))
         if speed_norm > self.desired_speed:
-            r_v_eff = weights["c_v_eff_over_limit"] * abs(self.desired_speed - speed_norm)
+            r_v_eff = weights["c_v_eff_over_limit"] * abs(
+                self.desired_speed - speed_norm
+            )
         else:
             r_v_eff = weights["c_v_eff_under_limit"] * speed_norm
 
-        delta_yaw, _, _ = self._get_delta_yaw()
-        r_delta_yaw = weights["c_yaw_delta"] * delta_yaw
-
-        if self.continuous:
-            r_action_regularized = weights["c_action_reg"] * np.linalg.norm(action)**2
-        else:
-            r_action_regularized = 0
-
-        lateral_dist = self.state_info["lateral_dist_t"]
-        r_lateral = weights["c_lat_dev"] * abs(lateral_dist)
-
-        r_dist_from_goal = weights["c_dist_from_goal"] * (-1 + self.state_info["progress"])
-        r_progress = weights["c_progress"] * self.state_info["progress"]
-
-        if self._closest_pedestrian_distance < self.pedestrian_proximity_threshold:
-            # Increase negative reward as pedestrian distance decreases
-            r_pedestrian = weights["c_pedestrian_proximity"] * (self.pedestrian_proximity_threshold - self._closest_pedestrian_distance)
-        else:
-            r_pedestrian = 0
-
-        if self._closest_vehicle_distance < self.vehicle_proximity_threshold:
-            r_vehicle_proximity = weights["c_vehicle_proximity"] * (self.vehicle_proximity_threshold - self._closest_vehicle_distance)
-        else:
-            r_vehicle_proximity = 0
-
-        r_tot = r_v_eff + weights["r_step"] + r_delta_yaw + r_action_regularized + r_lateral + r_progress + r_dist_from_goal + r_pedestrian + r_vehicle_proximity
+        r_tot = r_v_eff + weights["r_step"]
 
         return r_tot
 
@@ -433,12 +484,16 @@ class CarlaEnv(gym.Env):
             if t == 0 and None wpt: return self.starts
         """
         waypoint, progress = self._get_waypoint(location=self.ego.get_location())
-        waypoint_loc = self._get_waypoint(location=self.ego.get_location())[0].transform.location
-        self.world.debug.draw_point(waypoint_loc, life_time=20)
+        # waypoint_loc = self._get_waypoint(location=self.ego.get_location())[0].transform.location
+        # self.world.debug.draw_point(waypoint_loc, life_time=20)
         if waypoint:
             return np.array(
-                (waypoint.transform.location.x, waypoint.transform.location.y,
-                 waypoint.transform.rotation.yaw)), progress
+                (
+                    waypoint.transform.location.x,
+                    waypoint.transform.location.y,
+                    waypoint.transform.rotation.yaw,
+                )
+            ), progress
         else:
             return self.current_wpt, progress
 
@@ -446,7 +501,9 @@ class CarlaEnv(gym.Env):
         min_wp = self.waypoints[0]
         index = 0
         for i, wp in enumerate(self.waypoints):
-            if location.distance(wp[0].transform.location) < location.distance(min_wp[0].transform.location):
+            if location.distance(wp[0].transform.location) < location.distance(
+                min_wp[0].transform.location
+            ):
                 min_wp = wp
                 index = i
         return min_wp[0], float(index) / len(self.waypoints)
@@ -461,37 +518,116 @@ class CarlaEnv(gym.Env):
         """
         velocity_t = self.state_info["velocity_t"] / (self.desired_speed * 1.5)
         accel_t = self.state_info["acceleration_t"] / 40
-        delta_yaw_t = np.array(self.state_info["delta_yaw_t"]).reshape((1, )) / 180
-        dyaw_dt_t = np.array(self.state_info["dyaw_dt_t"]).reshape((1, )) / 30.0
-        lateral_dist_t = self.state_info["lateral_dist_t"].reshape((1, )) / 5
+        delta_yaw_t = np.array(self.state_info["delta_yaw_t"]).reshape((1,)) / 180
+        dyaw_dt_t = np.array(self.state_info["dyaw_dt_t"]).reshape((1,)) / 30.0
+        lateral_dist_t = self.state_info["lateral_dist_t"].reshape((1,)) / 5
         action_last = self.state_info["action_t_1"] / 3
 
         # future_angles = self.state_info["angles_t"] / 90
-        target_dist_y = np.array(self.state_info["target_vehicles_dist_y"]).reshape((len(self.state_info["target_vehicles_dist_y"]), )) / 40
-        target_dist_x = np.array(self.state_info["target_vehicles_dist_x"]).reshape((len(self.state_info["target_vehicles_dist_y"]), )) / 30
-        target_vel = np.array(self.state_info["target_vehicles_vel"]).reshape((len(self.state_info["target_vehicles_dist_y"]), )) / 7
-        ped_dist_y = np.array(self.state_info["peds_dist_y"]).reshape((len(self.state_info["peds_dist_y"]), )) / 40
-        ped_dist_x = np.array(self.state_info["peds_dist_x"]).reshape((len(self.state_info["peds_dist_y"]), )) / 30
-        ped_vel = np.array(self.state_info["peds_vel"]).reshape((len(self.state_info["peds_dist_y"]), )) / 7
+        target_dist_y = (
+            np.array(self.state_info["target_vehicles_dist_y"]).reshape(
+                (len(self.state_info["target_vehicles_dist_y"]),)
+            )
+            / 40
+        )
+        target_dist_x = (
+            np.array(self.state_info["target_vehicles_dist_x"]).reshape(
+                (len(self.state_info["target_vehicles_dist_y"]),)
+            )
+            / 30
+        )
+        target_vel = (
+            np.array(self.state_info["target_vehicles_vel"]).reshape(
+                (len(self.state_info["target_vehicles_dist_y"]),)
+            )
+            / 7
+        )
+        ped_dist_y = (
+            np.array(self.state_info["peds_dist_y"]).reshape(
+                (len(self.state_info["peds_dist_y"]),)
+            )
+            / 40
+        )
+        ped_dist_x = (
+            np.array(self.state_info["peds_dist_x"]).reshape(
+                (len(self.state_info["peds_dist_y"]),)
+            )
+            / 30
+        )
+        ped_vel = (
+            np.array(self.state_info["peds_vel"]).reshape(
+                (len(self.state_info["peds_dist_y"]),)
+            )
+            / 7
+        )
 
-        if self.obs_space == "normal":
-            info_vec = np.concatenate([
-                velocity_t, accel_t, delta_yaw_t, dyaw_dt_t, lateral_dist_t,
-                target_dist_y, target_dist_x, target_vel, ped_dist_y, ped_dist_x, ped_vel
-            ], axis=0, dtype=np.float32)
-        elif self.obs_space == "dict":
+        if self.observations_type == "normal":
+            info_vec = np.concatenate(
+                [
+                    velocity_t,
+                    accel_t,
+                    delta_yaw_t,
+                    dyaw_dt_t,
+                    lateral_dist_t,
+                    target_dist_y,
+                    target_dist_x,
+                    target_vel,
+                    ped_dist_y,
+                    ped_dist_x,
+                    ped_vel,
+                ],
+                axis=0,
+                dtype=np.float32,
+            )
+        elif self.observations_type == "dict":
             info_vec = {
-                "ego_state": np.concatenate([velocity_t, accel_t, delta_yaw_t, dyaw_dt_t, lateral_dist_t], axis=0, dtype=np.float32),
-                **({"adv_vehicles": np.concatenate([target_dist_y, target_dist_x, target_vel], axis=0, dtype=np.float32)} if self.num_veh else {}),
-                **({"pedestrians": np.concatenate([ped_dist_y, ped_dist_x, ped_vel], axis=0, dtype=np.float32)} if self.num_ped else {})
+                "ego_state": np.concatenate(
+                    [velocity_t, accel_t, delta_yaw_t, dyaw_dt_t, lateral_dist_t],
+                    axis=0,
+                    dtype=np.float32,
+                ),
+                **(
+                    {
+                        "adv_vehicles": np.concatenate(
+                            [target_dist_y, target_dist_x, target_vel],
+                            axis=0,
+                            dtype=np.float32,
+                        )
+                    }
+                    if self.num_veh
+                    else {}
+                ),
+                **(
+                    {
+                        "pedestrians": np.concatenate(
+                            [ped_dist_y, ped_dist_x, ped_vel], axis=0, dtype=np.float32
+                        )
+                    }
+                    if self.num_ped
+                    else {}
+                ),
             }
+        elif self.observations_type == "image":
+            info_vec = self.observation_image
 
         return info_vec
+
+    def _preprocess_image(
+        self, image: np.ndarray, x_dim: int, y_dim: int
+    ) -> np.ndarray:
+        img_resized = cv2.resize(image, (x_dim, y_dim), interpolation=cv2.INTER_AREA)
+        img_gray = cv2.cvtColor(img_resized, cv2.COLOR_BGR2GRAY)
+        scaled_image = img_gray / 255.0
+        mean, std = 0.5, 0.5
+        normalized_image = (scaled_image - mean) / std
+        return normalized_image
 
     def reset(self, seed=None):
         # Randomly select one of the destinations
         self.dest = random.choice(self.possible_destinations)
-        self.waypoints = self.global_planner.trace_route(self.start.location, self.dest.location)
+        self.waypoints = self.global_planner.trace_route(
+            self.start.location, self.dest.location
+        )
 
         # Obstacle sensor variables
         self.ego_obstacle_sensor = None
@@ -513,7 +649,7 @@ class CarlaEnv(gym.Env):
 
         self.target_vehicles = []
         self.peds = []
-        assert (self.num_veh <= 3)
+        assert self.num_veh <= 3
         # assert(self.num_ped <= 2)
         if self._try_spawn_ego_vehicle_at(self.start) is False:
             raise Exception("Error: Cannot spawn ego vehicle")
@@ -548,27 +684,49 @@ class CarlaEnv(gym.Env):
                 self.pedestrian_collision = True
 
         def get_camera_img(data):
-            self.og_camera_img = data
+            self.og_camera_img = self._convert_to_rgb_image(data)
+
+        def _front_camera_img(data):
+            rgb_image = self._convert_to_rgb_image(data)
+            self.observation_image = self._preprocess_image(rgb_image, 128, 128)
 
         # Add collision sensor
-        self.ego_collision_sensor = self.world.spawn_actor(self.collision_bp, carla.Transform(), attach_to=self.ego)
+        self.ego_collision_sensor = self.world.spawn_actor(
+            self.collision_bp, carla.Transform(), attach_to=self.ego
+        )
         self.ego_collision_sensor.listen(lambda event: collision_event(event))
 
         # Add obstacle sensor
-        self.ego_obstacle_sensor = self.world.spawn_actor(self.obstacle_bp, carla.Transform(), attach_to=self.ego)
+        self.ego_obstacle_sensor = self.world.spawn_actor(
+            self.obstacle_bp, carla.Transform(), attach_to=self.ego
+        )
         self.ego_obstacle_sensor.listen(lambda event: obstacle_event(event))
 
         if self.udp_server:
             # Add GNSS sensors
-            self.gnss_sensor = self.world.spawn_actor(self._gns_sensor_bp, carla.Transform(), attach_to=self.ego)
+            self.gnss_sensor = self.world.spawn_actor(
+                self._gns_sensor_bp, carla.Transform(), attach_to=self.ego
+            )
             self.gnss_sensor.listen(lambda gnss_data: _get_gps(gnss_data))
 
             # Add IMU sensors
-            self.imu_sensor = self.world.spawn_actor(self._imu_sensor_bp, carla.Transform(), attach_to=self.ego)
+            self.imu_sensor = self.world.spawn_actor(
+                self._imu_sensor_bp, carla.Transform(), attach_to=self.ego
+            )
             self.imu_sensor.listen(lambda imu_data: _get_imu(imu_data))
 
-        self.camera_sensor = self.world.spawn_actor(self.camera_bp, self.camera_trans, attach_to=self.ego)
+        self.camera_sensor = self.world.spawn_actor(
+            self.camera_bp, self.camera_trans, attach_to=self.ego
+        )
         self.camera_sensor.listen(lambda data: get_camera_img(data))
+
+        if self.observations_type == "image":
+            self.front_camera_sensor = self.world.spawn_actor(
+                self.front_camera_bp,
+                carla.Transform(carla.Location(x=2.5, z=0.7), carla.Rotation(yaw=0.0)),
+                attach_to=self.ego,
+            )
+            self.front_camera_sensor.listen(lambda data: _front_camera_img(data))
 
         # Update timesteps
         self.time_step = 1
@@ -596,22 +754,42 @@ class CarlaEnv(gym.Env):
     def _spawn_surrounding_pedestrians(self):
         x = 92.7
         for _ in range(self.num_ped):
-            pedestrian = self._try_spawn_random_walker_at(carla.Transform(carla.Location(x=x, y=-144, z=10), carla.Rotation(yaw=random.randint(0, 360))))
+            pedestrian = self._try_spawn_random_walker_at(
+                carla.Transform(
+                    carla.Location(x=x, y=-144, z=10),
+                    carla.Rotation(yaw=random.randint(0, 360)),
+                )
+            )
             x += 1
             self.peds.append(pedestrian)
         x = 74.6
         for _ in range(self.num_ped):
-            pedestrian = self._try_spawn_random_walker_at(carla.Transform(carla.Location(x=x, y=-144, z=10), carla.Rotation(yaw=random.randint(0, 360))))
+            pedestrian = self._try_spawn_random_walker_at(
+                carla.Transform(
+                    carla.Location(x=x, y=-144, z=10),
+                    carla.Rotation(yaw=random.randint(0, 360)),
+                )
+            )
             x += 1
             self.peds.append(pedestrian)
         x = 92.7
         for _ in range(self.num_ped):
-            pedestrian = self._try_spawn_random_walker_at(carla.Transform(carla.Location(x=x, y=-125, z=10), carla.Rotation(yaw=random.randint(0, 360))))
+            pedestrian = self._try_spawn_random_walker_at(
+                carla.Transform(
+                    carla.Location(x=x, y=-125, z=10),
+                    carla.Rotation(yaw=random.randint(0, 360)),
+                )
+            )
             x += 1
             self.peds.append(pedestrian)
         x = 74.6
         for _ in range(self.num_ped):
-            pedestrian = self._try_spawn_random_walker_at(carla.Transform(carla.Location(x=x, y=-125, z=10), carla.Rotation(yaw=random.randint(0, 360))))
+            pedestrian = self._try_spawn_random_walker_at(
+                carla.Transform(
+                    carla.Location(x=x, y=-125, z=10),
+                    carla.Rotation(yaw=random.randint(0, 360)),
+                )
+            )
             x += 1
             self.peds.append(pedestrian)
 
@@ -625,7 +803,6 @@ class CarlaEnv(gym.Env):
             traffic_manager.distance_to_leading_vehicle(vehicle, 5)
 
     def _spawn_surrounding_close_proximity_vehicles(self):
-
         adversary_bp = self._create_vehicle_bluepprint("vehicle.tesla.model3")
 
         # Vehicle in same lane as ego vehicle
@@ -638,7 +815,10 @@ class CarlaEnv(gym.Env):
         x = 75
         for _ in range(self.num_veh):
             x = x - 15
-            adversary_transform = carla.Transform(carla.Location(x=x + random.randint(-5, 5), y=y, z=8), carla.Rotation(yaw=0))
+            adversary_transform = carla.Transform(
+                carla.Location(x=x + random.randint(-5, 5), y=y, z=8),
+                carla.Rotation(yaw=0),
+            )
             actor = self.world.try_spawn_actor(adversary_bp, adversary_transform)
             self.target_vehicles.append(actor)
             actor.apply_control(carla.VehicleControl(throttle=0, steer=0, brake=1))
@@ -646,7 +826,10 @@ class CarlaEnv(gym.Env):
         x = 90
         for _ in range(self.num_veh):
             x = x + 15
-            adversary_transform = carla.Transform(carla.Location(x=x + random.randint(-5, 5), y=y, z=10), carla.Rotation(yaw=180))
+            adversary_transform = carla.Transform(
+                carla.Location(x=x + random.randint(-5, 5), y=y, z=10),
+                carla.Rotation(yaw=180),
+            )
             actor = self.world.try_spawn_actor(adversary_bp, adversary_transform)
             self.target_vehicles.append(actor)
             actor.apply_control(carla.VehicleControl(throttle=0, steer=0, brake=1))
@@ -655,7 +838,10 @@ class CarlaEnv(gym.Env):
         y = -135
         for _ in range(self.num_veh):
             y = y - 15
-            adversary_transform = carla.Transform(carla.Location(x=x, y=y + random.randint(-5, 5), z=10), carla.Rotation(yaw=90))
+            adversary_transform = carla.Transform(
+                carla.Location(x=x, y=y + random.randint(-5, 5), z=10),
+                carla.Rotation(yaw=90),
+            )
             actor = self.world.try_spawn_actor(adversary_bp, adversary_transform)
             self.target_vehicles.append(actor)
             actor.apply_control(carla.VehicleControl(throttle=0, steer=0, brake=1))
@@ -669,21 +855,28 @@ class CarlaEnv(gym.Env):
         Returns:
         Bool indicating whether the spawn is successful.
         """
-        walker_bp = random.choice(self.world.get_blueprint_library().filter('walker.*'))
+        walker_bp = random.choice(self.world.get_blueprint_library().filter("walker.*"))
         # set as not invencible
-        if walker_bp.has_attribute('is_invincible'):
-            walker_bp.set_attribute('is_invincible', 'false')
+        if walker_bp.has_attribute("is_invincible"):
+            walker_bp.set_attribute("is_invincible", "false")
         walker_actor = self.world.try_spawn_actor(walker_bp, transform)
 
         if walker_actor is not None:
-            walker_controller_bp = self.world.get_blueprint_library().find('controller.ai.walker')
-            walker_controller_actor = self.world.spawn_actor(walker_controller_bp, carla.Transform(), walker_actor)
+            walker_controller_bp = self.world.get_blueprint_library().find(
+                "controller.ai.walker"
+            )
+            walker_controller_actor = self.world.spawn_actor(
+                walker_controller_bp, carla.Transform(), walker_actor
+            )
             # start walker
             walker_controller_actor.start()
             # set walk to random point
-            walker_controller_actor.go_to_location(self.world.get_random_location_from_navigation())
+            walker_controller_actor.go_to_location(
+                self.world.get_random_location_from_navigation()
+            )
             # random max speed
-            walker_controller_actor.set_max_speed(1 + random.random())    # max speed between 1 and 2 (default is 1.4 m/s)
+            # max speed between 1 and 2 (default is 1.4 m/s)
+            walker_controller_actor.set_max_speed(1 + random.random())
             return walker_actor
         return None
 
@@ -700,7 +893,9 @@ class CarlaEnv(gym.Env):
                 self.speed_index = max(0, self.speed_index - 1)
             elif self.ACTIONS[action] == "FASTER":
                 # Shift list to the right
-                self.speed_index = min(len(self.target_speeds) - 1, self.speed_index + 1)
+                self.speed_index = min(
+                    len(self.target_speeds) - 1, self.speed_index + 1
+                )
             elif self.ACTIONS[action] == "IDLE":
                 self.speed_index = self.speed_index
 
@@ -714,7 +909,6 @@ class CarlaEnv(gym.Env):
         self.udp_server.send_update()
 
     def step(self, action: np.ndarray) -> Tuple[np.ndarray, float, bool, Dict]:
-
         # Reset closest pedestrian and vehicle variables
         self._closest_pedestrian_distance = MAX_VALUE
         self._closest_vehicle_distance = MAX_VALUE
@@ -724,7 +918,7 @@ class CarlaEnv(gym.Env):
         speed_in_km_h = speed_in_vms * 3.6
 
         self.routeplanner.set_speed(speed_in_km_h)
-        control = self.routeplanner.run_step(debug=True)
+        control = self.routeplanner.run_step(debug=False)
         self.ego.apply_control(control)
         if self.udp_server:
             self._update_udp_server(control)
@@ -742,12 +936,18 @@ class CarlaEnv(gym.Env):
 
         self._populate_state_info()
 
-        return (self._get_obs(), current_reward, isDone, isDone, copy.deepcopy(self.state_info))
+        return (
+            self._get_obs(),
+            current_reward,
+            isDone,
+            isDone,
+            copy.deepcopy(self.state_info),
+        )
 
     def display(self, display):
-        if not self.og_camera_img:
-            return
-        camera_surface = self._to_display_surface(self.og_camera_img)
+        camera_surface = pygame.surfarray.make_surface(
+            self.og_camera_img.swapaxes(0, 1)
+        )
         display.blit(camera_surface, (0, 0))
 
     def _clear_actor_filters(self, actor_filters):
@@ -755,29 +955,36 @@ class CarlaEnv(gym.Env):
         for actor_filter in actor_filters:
             for actor in self.world.get_actors().filter(actor_filter):
                 if actor.is_alive:
-                    if actor.type_id == 'controller.ai.walker':
+                    if actor.type_id == "controller.ai.walker":
                         actor.stop()
                     actor.destroy()
-    
+
     def _clear_actors_batch(self):
-        
         # Destroy all sensors and ai walker
-        self._clear_actor_filters(["controller.ai.walker", "sensor.other.collision", "sensor.camera.rgb", "sensor.other.obstacle", "sensor.other.gnss", "sensor.other.imu"])
-        
+        self._clear_actor_filters(
+            [
+                "controller.ai.walker",
+                "sensor.other.collision",
+                "sensor.camera.rgb",
+                "sensor.other.obstacle",
+                "sensor.other.gnss",
+                "sensor.other.imu",
+            ]
+        )
+
         batch = []
         for peds in self.peds:
             batch.append(carla.command.DestroyActor(peds))
         for vehicle in self.target_vehicles:
             batch.append(carla.command.DestroyActor(vehicle))
-        
+
         if self.ego:
             batch.append(carla.command.DestroyActor(self.ego))
 
         self.client.apply_batch_sync(batch)
 
     def _set_synchronous_mode(self, synchronous=True):
-        """Set whether to use the synchronous mode.
-        """
+        """Set whether to use the synchronous mode."""
         settings = self.world.get_settings()
         if synchronous:
             settings.fixed_delta_seconds = 0.05
@@ -790,9 +997,7 @@ if __name__ == "__main__":
 
     # Make pygame display
     pygame.init()
-    display = pygame.display.set_mode(
-        (1024, 1024),
-        pygame.HWSURFACE | pygame.DOUBLEBUF)
+    display = pygame.display.set_mode((1024, 1024), pygame.HWSURFACE | pygame.DOUBLEBUF)
 
     cfg = yaml.safe_load(open("config_discrete.yaml", "r"))
     env = CarlaEnv(cfg=cfg, host="carla_server", port=2000, udp_server=True)
