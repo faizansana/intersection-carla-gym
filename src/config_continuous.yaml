@@ -1,7 +1,5 @@
-exp_name: "first_test"
-output_dir: "output"
 env:
-  obs_space: "dict" # "dict" or "normal"
+  observations_type: "image" # "dict" or "normal" or "image"
   continuous: True
   target_speeds: [0, 3, 6, 9, 12] # For discrete speed control
   desired_speed: 12 # For continuous speed control
@@ -10,8 +8,8 @@ env:
   port: 2000
   render: false
   ego_vehicle_filter: "vehicle.lincoln*"
-  num_veh: 1
-  num_ped: 2
+  num_veh: 3
+  num_ped: 0
   max_steps: 500
   CAM_RES: 1024
   max_waypt: 200
@@ -30,7 +28,7 @@ env:
     c_v_eff_under_limit: 1.0
     c_v_eff_over_limit: -2.0
     # Penalty for needing another step
-    r_step: -0.0
+    r_step: -1.0
     # Penalty for non-smooth actions
     c_action_reg: -0.0
     # Penalty for yaw delta w.r.t. road heading
