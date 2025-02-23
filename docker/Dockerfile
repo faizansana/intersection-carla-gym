@@ -12,10 +12,7 @@ ENV DEBIAN_FRONTEND noninteractive
 ENV CARLA_VERSION $CARLA_VERSION
 RUN apt-get update && \
     apt-get install software-properties-common -y && \
-    # Needed for installing python3.8 in ubuntu 22.04
-    add-apt-repository ppa:deadsnakes/ppa -y && \
-    apt-get update && \
-    apt-get install -y sudo curl wget git python3.8 python3.8-venv iputils-ping && \
+    apt-get install -y sudo curl wget git iputils-ping python3.10-venv && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
@@ -57,7 +54,7 @@ COPY --chown=docker:docker ./requirements.txt /tmp
 
 USER root:root
 WORKDIR /home/docker
-RUN python3.8 -m venv $PYTHON_VENV_NAME && \
+RUN python3 -m venv $PYTHON_VENV_NAME && \
     source $PYTHON_VENV_NAME/bin/activate && \
     pip install --upgrade pip && \
     pip install --no-cache-dir -r /tmp/requirements.txt 
@@ -72,7 +69,7 @@ RUN wget -O PlotJuggler-3.5.0.AppImage https://github.com/facontidavide/PlotJugg
 # Install carla python api if carla v0.9.12 or greater, otherwise add the egg to the python path
 RUN if [[ "$CARLA_VERSION" > "0.9.11" ]]; then \
     source $PYTHON_VENV_NAME/bin/activate && \
-    python -m pip install "carla==$CARLA_VERSION"; \
+    python3 -m pip install "carla==$CARLA_VERSION"; \
     else \
     CARLA_VERSION=$(echo $CARLA_VERSION | sed 's/\.[^.]*$//') && \
     echo "export PYTHONPATH=$PYTHONPATH:/opt/carla/PythonAPI/carla/dist/carla-${CARLA_VERSION}-py3.7-linux-x86_64.egg" >> ~/.bashrc; \
